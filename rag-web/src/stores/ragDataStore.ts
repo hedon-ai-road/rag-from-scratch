@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia';
+import { computed, ref } from 'vue';
 
-// --- Interfaces based on data-transfer-v0.0.1.md ---
-interface FileRecord {
+// Type definitions based on data-transfer-v0.0.1.md
+interface FileMetadata {
   file_id: string;
   file_name: string;
   file_size: number;
@@ -9,7 +10,7 @@ interface FileRecord {
   created_at: string;
 }
 
-interface ChunkRecord {
+interface Chunk {
   chunk_id: string;
   file_id: string;
   content: string;
@@ -19,11 +20,8 @@ interface ChunkRecord {
 
 interface VectorRecord {
   id: string;
-  vector: number[]; // Simplified for mock
-  payload: {
-    chunk_id: string;
-    file_id: string;
-  };
+  chunk_id: string;
+  file_id: string;
 }
 
 interface SearchLog {
@@ -36,117 +34,319 @@ interface SearchLog {
 interface GenerationRecord {
   gen_id: string;
   query: string;
-  used_chunks: string[]; // JSON array string in doc, array here
+  used_chunks: string[];
   response: string;
   created_at: string;
 }
 
-// --- Store Definition ---
-export const useRagDataStore = defineStore('ragData', {
-  state: () => ({
-    files: [] as FileRecord[],
-    chunks: [] as ChunkRecord[],
-    vectors: [] as VectorRecord[],
-    searchLogs: [] as SearchLog[],
-    generations: [] as GenerationRecord[],
-    // --- Mock Data Initialization ---
-    _initialized: false, // Flag to prevent re-initialization
-  }),
+interface QueryResult {
+  query: string;
+  retrievedChunks: Chunk[];
+  generatedResponse: string;
+  searchScores: { vector: number; bm25: number };
+  timestamp: string;
+}
 
-  getters: {
-    // Example getter: Get chunks for a specific file
-    getChunksByFileId: (state) => {
-      return (fileId: string) => state.chunks.filter(chunk => chunk.file_id === fileId);
-    },
-    // Example getter: Get file record by ID
-    getFileById: (state) => {
-       return (fileId: string) => state.files.find(file => file.file_id === fileId);
-    }
-  },
+export const useRagDataStore = defineStore('ragData', () => {
+  // State
+  const files = ref<FileMetadata[]>([]);
+  const chunks = ref<Chunk[]>([]);
+  const vectors = ref<VectorRecord[]>([]);
+  const searchLogs = ref<SearchLog[]>([]);
+  const generations = ref<GenerationRecord[]>([]);
+  const latestQueryResult = ref<QueryResult | null>(null);
 
-  actions: {
-    // Action to add a new file (like after upload)
-    addFile(file: Omit<FileRecord, 'file_id' | 'created_at' | 'storage_path'>) {
-      const newFile: FileRecord = {
-        ...file,
-        file_id: `f${Date.now().toString(36)}${Math.random().toString(36).substring(2, 5)}`, // Mock ID
-        storage_path: `./data/original/${file.file_name}`, // Mock path
-        created_at: new Date().toISOString(),
-      };
-      this.files.push(newFile);
-      console.log('Added mock file:', newFile);
-      // Simulate subsequent pipeline stages (chunking, embedding)
-      this.mockProcessNewFile(newFile);
-    },
+  // Settings
+  const chunkSettings = ref({
+    window_size: 512,
+    overlap: 128,
+    strategy: 'sliding_window'
+  });
 
-    // Simulate processing steps for a new file
-    mockProcessNewFile(file: FileRecord) {
-      console.log(`Mock processing for file: ${file.file_name}`);
+  const vectorSettings = ref({
+    model: 'BGE-M3',
+    dimensions: 768
+  });
 
-      // 1. Mock Chunking
-      const mockContent = `This is the simulated content for ${file.file_name}. It is divided into several chunks for demonstration purposes. Chunk 1 ends here. This is the start of chunk 2 which overlaps. Chunk 2 ends. Finally, chunk 3 starts here and finishes the document.`;
-      const chunkSize = 100;
-      const overlap = 20;
-      let offset = 0;
-      let chunkIndex = 0;
-      while (offset < mockContent.length) {
-          const start = Math.max(0, offset - overlap);
-          const end = Math.min(mockContent.length, offset + chunkSize);
-          const newChunk: ChunkRecord = {
-              chunk_id: `c${file.file_id.substring(1)}-${chunkIndex++}`,
-              file_id: file.file_id,
-              content: mockContent.substring(start, end),
-              start_offset: start,
-              end_offset: end,
-          };
-          this.chunks.push(newChunk);
-          console.log('Added mock chunk:', newChunk);
+  const searchSettings = ref({
+    vectorWeight: 0.6,
+    bm25Weight: 0.4,
+    topK: 5
+  });
 
-           // 2. Mock Embedding for the chunk
-           const newVector: VectorRecord = {
-              id: `v${newChunk.chunk_id.substring(1)}`,
-              vector: Array.from({ length: 768 }, () => Math.random() * 2 - 1), // Random 768d vector
-              payload: {
-                  chunk_id: newChunk.chunk_id,
-                  file_id: newChunk.file_id,
-              }
-           };
-           this.vectors.push(newVector);
-           console.log('Added mock vector:', newVector);
+  // Computed
+  const fileCount = computed(() => files.value.length);
+  const chunkCount = computed(() => chunks.value.length);
+  const vectorCount = computed(() => vectors.value.length);
+  const searchCount = computed(() => searchLogs.value.length);
+  const generationCount = computed(() => generations.value.length);
 
-          if (end === mockContent.length) break;
-          offset += chunkSize - overlap; // Move window forward
+  // Get chunks for a specific file
+  const getChunksForFile = (fileId: string) => {
+    return chunks.value.filter(chunk => chunk.file_id === fileId);
+  };
+
+  // Generate a random ID
+  const generateId = (prefix: string) => {
+    return `${prefix}${Math.random().toString(36).substring(2, 10)}`;
+  };
+
+  // Initialize with mock data
+  function initializeMockData() {
+    // Sample files
+    const sampleFiles: FileMetadata[] = [
+      {
+        file_id: 'f1a3b5c7',
+        file_name: 'rag_guide.pdf',
+        file_size: 1024 * 1024, // 1MB
+        storage_path: './data/original/f1a3b5c7.pdf',
+        created_at: '2024-04-01T10:30:00Z'
+      },
+      {
+        file_id: 'b2c4d6e8',
+        file_name: 'embedding_models.txt',
+        file_size: 512 * 1024, // 512KB
+        storage_path: './data/original/b2c4d6e8.txt',
+        created_at: '2024-04-02T14:45:00Z'
       }
+    ];
 
-      // 3. Mock Search Log Entry (example)
-      const newSearchLog: SearchLog = {
-        timestamp: new Date().toISOString(),
-        query: `Initial analysis of ${file.file_name}`,
-        top_chunks: this.chunks.filter(c => c.file_id === file.file_id).slice(0, 2).map(c => c.chunk_id),
-        scores: { vector: Math.random() * 0.5 + 0.5, bm25: Math.random() * 0.5 + 0.4 },
-      };
-      this.searchLogs.push(newSearchLog);
-      console.log('Added mock search log:', newSearchLog);
+    // Sample chunks
+    const sampleChunks: Chunk[] = [
+      {
+        chunk_id: 'c1b2a3d4',
+        file_id: 'f1a3b5c7',
+        content: 'RAG (Retrieval Augmented Generation) is an architecture that combines search capabilities with generative AI to produce accurate, relevant responses based on specific knowledge sources.',
+        start_offset: 0,
+        end_offset: 511
+      },
+      {
+        chunk_id: 'd5e6f7a8',
+        file_id: 'f1a3b5c7',
+        content: 'The RAG workflow consists of several key components: document ingestion, chunking, embedding generation, vector storage, retrieval, and generation using LLMs.',
+        start_offset: 384,
+        end_offset: 895
+      },
+      {
+        chunk_id: 'g7h8i9j0',
+        file_id: 'b2c4d6e8',
+        content: 'Embedding models transform text into vector representations. Popular models include OpenAI embeddings, BGE-M3, and BERT variants that create dense vector spaces.',
+        start_offset: 0,
+        end_offset: 511
+      },
+      {
+        chunk_id: 'k1l2m3n4',
+        file_id: 'b2c4d6e8',
+        content: 'Vector similarity search uses distance metrics like cosine similarity or dot product to find the most relevant context for a given query.',
+        start_offset: 384,
+        end_offset: 895
+      }
+    ];
 
-      // 4. Mock Generation Entry (example)
-      const newGeneration: GenerationRecord = {
-          gen_id: `g${Date.now().toString(36)}`,
-          query: newSearchLog.query,
-          used_chunks: newSearchLog.top_chunks,
-          response: `Based on the initial analysis of ${file.file_name}, the key themes appear to be X and Y.`,
-          created_at: new Date().toISOString(),
-      };
-      this.generations.push(newGeneration);
-      console.log('Added mock generation:', newGeneration);
-    },
+    // Sample vector records
+    const sampleVectors: VectorRecord[] = [
+      { id: 'v1b2c3d4', chunk_id: 'c1b2a3d4', file_id: 'f1a3b5c7' },
+      { id: 'v5d6e7f8', chunk_id: 'd5e6f7a8', file_id: 'f1a3b5c7' },
+      { id: 'v9g0h1i2', chunk_id: 'g7h8i9j0', file_id: 'b2c4d6e8' },
+      { id: 'v3j4k5l6', chunk_id: 'k1l2m3n4', file_id: 'b2c4d6e8' }
+    ];
 
-    // Initialize with some default data if the store is empty
-    initializeMockData() {
-      if (this._initialized || this.files.length > 0) return; // Only run once
-      console.log("Initializing mock RAG data...");
-      this.addFile({ file_name: 'rag_guide.pdf', file_size: 1024 * 500 }); // 500 KB
-      this.addFile({ file_name: 'meeting_notes.txt', file_size: 1024 * 20 }); // 20 KB
-      this._initialized = true;
-    }
+    // Sample search logs
+    const sampleSearchLogs: SearchLog[] = [
+      {
+        timestamp: '2024-04-05T09:15:00Z',
+        query: 'What is RAG architecture?',
+        top_chunks: ['c1b2a3d4', 'd5e6f7a8'],
+        scores: { vector: 0.82, bm25: 0.75 }
+      }
+    ];
+
+    // Sample generation records
+    const sampleGenerations: GenerationRecord[] = [
+      {
+        gen_id: 'g1234567',
+        query: 'What is RAG architecture?',
+        used_chunks: ['c1b2a3d4', 'd5e6f7a8'],
+        response: 'RAG (Retrieval Augmented Generation) is an architecture that combines search and generative AI. It works by retrieving relevant information from a knowledge base and then using that information to augment the generation process of large language models, producing more accurate and contextually relevant responses.',
+        created_at: '2024-04-05T09:15:05Z'
+      }
+    ];
+
+    // Set the initial state
+    files.value = sampleFiles;
+    chunks.value = sampleChunks;
+    vectors.value = sampleVectors;
+    searchLogs.value = sampleSearchLogs;
+    generations.value = sampleGenerations;
   }
+
+  // Add a new file
+  function addFile(fileName: string, fileSize: number) {
+    const fileId = generateId('f');
+    const storagePath = `./data/original/${fileId}.${fileName.split('.').pop()}`;
+
+    const newFile: FileMetadata = {
+      file_id: fileId,
+      file_name: fileName,
+      file_size: fileSize,
+      storage_path: storagePath,
+      created_at: new Date().toISOString()
+    };
+
+    files.value.push(newFile);
+
+    // Automatically create chunks for this file
+    createChunksForFile(newFile);
+
+    return newFile;
+  }
+
+  // Create chunks for a file
+  function createChunksForFile(file: FileMetadata) {
+    // Create 2-4 mock chunks for the file
+    const numChunks = Math.floor(Math.random() * 3) + 2;
+    const chunkSize = chunkSettings.value.window_size;
+    const overlap = chunkSettings.value.overlap;
+
+    const sampleTexts = [
+      `This document discusses ${file.file_name.split('.')[0]} concepts and principles. It covers various aspects and implementation details.`,
+      `${file.file_name.split('.')[0]} provides a comprehensive approach to information processing and retrieval in modern systems.`,
+      `The techniques described in this section of ${file.file_name.split('.')[0]} enable efficient data management and knowledge extraction.`,
+      `Advanced algorithms for ${file.file_name.split('.')[0]} include optimization methods and pipeline configurations.`
+    ];
+
+    const newChunks: Chunk[] = [];
+
+    for (let i = 0; i < numChunks; i++) {
+      const start = i * (chunkSize - overlap);
+      const end = start + chunkSize;
+
+      const chunk: Chunk = {
+        chunk_id: generateId('c'),
+        file_id: file.file_id,
+        content: sampleTexts[i % sampleTexts.length],
+        start_offset: start,
+        end_offset: end
+      };
+
+      newChunks.push(chunk);
+      chunks.value.push(chunk);
+
+      // Create vector for each chunk
+      createVectorForChunk(chunk);
+    }
+
+    return newChunks;
+  }
+
+  // Create a vector for a chunk
+  function createVectorForChunk(chunk: Chunk) {
+    const vector: VectorRecord = {
+      id: generateId('v'),
+      chunk_id: chunk.chunk_id,
+      file_id: chunk.file_id
+    };
+
+    vectors.value.push(vector);
+    return vector;
+  }
+
+  // Execute a RAG query
+  function performMockRagQuery(query: string) {
+    // 1. Simulate search by finding chunks that might be relevant to the query
+    // For mock purposes, just do a simple keyword match
+    const queryKeywords = query.toLowerCase().split(/\s+/);
+
+    const relevantChunks = chunks.value.filter(chunk => {
+      const content = chunk.content.toLowerCase();
+      return queryKeywords.some(keyword => content.includes(keyword));
+    });
+
+    // Sort by "relevance" - more keyword matches = higher relevance
+    relevantChunks.sort((a, b) => {
+      const scoreA = queryKeywords.filter(kw => a.content.toLowerCase().includes(kw)).length;
+      const scoreB = queryKeywords.filter(kw => b.content.toLowerCase().includes(kw)).length;
+      return scoreB - scoreA;
+    });
+
+    // Take top K chunks
+    const topChunks = relevantChunks.slice(0, searchSettings.value.topK);
+    const topChunkIds = topChunks.map(chunk => chunk.chunk_id);
+
+    // 2. Create search log
+    const vectorScore = 0.7 + Math.random() * 0.25; // Random score between 0.7-0.95
+    const bm25Score = 0.65 + Math.random() * 0.25; // Random score between 0.65-0.9
+
+    const searchLog: SearchLog = {
+      timestamp: new Date().toISOString(),
+      query,
+      top_chunks: topChunkIds,
+      scores: { vector: vectorScore, bm25: bm25Score }
+    };
+
+    searchLogs.value.push(searchLog);
+
+    // 3. Generate a response
+    let responseText = '';
+
+    if (topChunks.length > 0) {
+      // Create a response based on the retrieved chunks
+      responseText = `Based on the available information, ${topChunks[0].content} `;
+
+      if (topChunks.length > 1) {
+        responseText += `Additionally, ${topChunks[1].content.toLowerCase()}`;
+      }
+    } else {
+      responseText = "I couldn't find specific information about that in my knowledge base.";
+    }
+
+    // 4. Create generation record
+    const generationRecord: GenerationRecord = {
+      gen_id: generateId('g'),
+      query,
+      used_chunks: topChunkIds,
+      response: responseText,
+      created_at: new Date().toISOString()
+    };
+
+    generations.value.push(generationRecord);
+
+    // 5. Update latest query result
+    latestQueryResult.value = {
+      query,
+      retrievedChunks: topChunks,
+      generatedResponse: responseText,
+      searchScores: { vector: vectorScore, bm25: bm25Score },
+      timestamp: new Date().toISOString()
+    };
+
+    return latestQueryResult.value;
+  }
+
+  // Return everything needed by the components
+  return {
+    // State
+    files,
+    chunks,
+    vectors,
+    searchLogs,
+    generations,
+    latestQueryResult,
+    chunkSettings,
+    vectorSettings,
+    searchSettings,
+
+    // Computed
+    fileCount,
+    chunkCount,
+    vectorCount,
+    searchCount,
+    generationCount,
+
+    // Actions
+    initializeMockData,
+    addFile,
+    getChunksForFile,
+    performMockRagQuery
+  };
 });
