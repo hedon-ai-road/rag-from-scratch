@@ -36,10 +36,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { useRagDataStore } from './stores/ragDataStore';
 
 const router = useRouter();
+const ragDataStore = useRagDataStore();
+
+// Initialize mock data when component is mounted
+onMounted(() => {
+  ragDataStore.initializeMockData();
+});
 
 // Filter routes for navigation (optional, e.g., hide redirects)
 const routes = router.options.routes.filter(r => r.component); // Only show routes with components
