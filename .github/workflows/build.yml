@@ -32,11 +32,11 @@ jobs:
         uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
       - name: Check code format
-        run: cargo fmt -- --check
+        run: cd rag-backend && cargo fmt -- --check
       - name: Check the package for errors
-        run: cargo check --all
+        run: cd rag-backend && cargo check --all
       - name: Execute rust tests
-        run: cargo nextest run --all-features
+        run: cd rag-backend && cargo nextest run --all-features
       - name: Get tags info
         id: get_tag_message
         run: git fetch origin +refs/tags/*:refs/tags/*

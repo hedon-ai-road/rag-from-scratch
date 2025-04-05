@@ -21,7 +21,7 @@ repos:
       - id: cargo-fmt
         name: cargo fmt
         description: Format files with rustfmt.
-        entry: bash -c 'cargo fmt -- --check'
+        entry: bash -c 'cd rag-backend && cargo fmt -- --check'
         language: rust
         files: \.rs$
         args: []
@@ -35,21 +35,21 @@ repos:
       - id: cargo-check
         name: cargo check
         description: Check the package for errors.
-        entry: bash -c 'cargo check --all'
+        entry: bash -c 'cd rag-backend && cargo check --all'
         language: rust
         files: \.rs$
         pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy
         description: Lint rust sources
-        entry: bash -c 'cargo clippy --all-targets --all-features --tests --benches -- -D warnings'
+        entry: bash -c 'cd rag-backend && cargo clippy --all-targets --all-features --tests --benches -- -D warnings'
         language: rust
         files: \.rs$
         pass_filenames: false
       - id: cargo-test
         name: cargo test
         description: unit test for the project
-        entry: bash -c 'cargo nextest run --all-features'
+        entry: bash -c 'cd rag-backend && cargo nextest run --all-features'
         language: rust
         files: \.rs$
         pass_filenames: false
