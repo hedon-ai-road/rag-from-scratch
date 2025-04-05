@@ -36,7 +36,7 @@ jobs:
       - name: Check the package for errors
         run: cd rag-backend && cargo check --all
       - name: Execute rust tests
-        run: cd rag-backend && cargo nextest run --all-features --no-tests
+        run: cd rag-backend && cargo nextest run --all-features --no-tests pass
       - name: Get tags info
         id: get_tag_message
         run: git fetch origin +refs/tags/*:refs/tags/*
