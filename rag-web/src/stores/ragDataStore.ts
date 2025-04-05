@@ -8,6 +8,7 @@ interface FileMetadata {
   file_size: number;
   storage_path: string;
   created_at: string;
+  loadingMethod?: string;
 }
 
 interface Chunk {
@@ -100,14 +101,16 @@ export const useRagDataStore = defineStore('ragData', () => {
         file_name: 'rag_guide.pdf',
         file_size: 1024 * 1024, // 1MB
         storage_path: './data/original/f1a3b5c7.pdf',
-        created_at: '2024-04-01T10:30:00Z'
+        created_at: '2024-04-01T10:30:00Z',
+        loadingMethod: 'PyMuPDF'
       },
       {
         file_id: 'b2c4d6e8',
-        file_name: 'embedding_models.txt',
+        file_name: 'embedding_models.pdf',
         file_size: 512 * 1024, // 512KB
-        storage_path: './data/original/b2c4d6e8.txt',
-        created_at: '2024-04-02T14:45:00Z'
+        storage_path: './data/original/b2c4d6e8.pdf',
+        created_at: '2024-04-02T14:45:00Z',
+        loadingMethod: 'PyPDF'
       }
     ];
 
@@ -181,75 +184,73 @@ export const useRagDataStore = defineStore('ragData', () => {
   }
 
   // Add a new file
-  function addFile(fileName: string, fileSize: number) {
-    const fileId = generateId('f');
-    const storagePath = `./data/original/${fileId}.${fileName.split('.').pop()}`;
-
-    const newFile: FileMetadata = {
-      file_id: fileId,
-      file_name: fileName,
-      file_size: fileSize,
-      storage_path: storagePath,
-      created_at: new Date().toISOString()
+  const addFile = (fileInfo: Omit<FileMetadata, 'file_id' | 'created_at'> & { loadingMethod?: string }) => {
+    const file_id = `file_${Date.now()}`;
+    const fileData: FileMetadata = {
+      ...fileInfo,
+      file_id,
+      created_at: new Date().toISOString(),
+      loadingMethod: fileInfo.loadingMethod || 'PyMuPDF'
     };
+    files.value.push(fileData);
+    return file_id;
+  };
 
-    files.value.push(newFile);
+  // Delete a file
+  const deleteFile = (fileId: string) => {
+    // Remove the file
+    files.value = files.value.filter(file => file.file_id !== fileId);
 
-    // Automatically create chunks for this file
-    createChunksForFile(newFile);
+    // Remove associated chunks
+    chunks.value = chunks.value.filter(chunk => chunk.file_id !== fileId);
 
-    return newFile;
-  }
+    // Remove associated vectors
+    vectors.value = vectors.value.filter(vector => vector.file_id !== fileId);
+
+    // Could also remove associated search logs and generations,
+    // but we'll keep them for history purposes
+  };
 
   // Create chunks for a file
-  function createChunksForFile(file: FileMetadata) {
-    // Create 2-4 mock chunks for the file
-    const numChunks = Math.floor(Math.random() * 3) + 2;
-    const chunkSize = chunkSettings.value.window_size;
-    const overlap = chunkSettings.value.overlap;
+  const createChunksForFile = (file: FileMetadata) => {
+    // Remove all existing chunks for this file
+    chunks.value = chunks.value.filter(chunk => chunk.file_id !== file.file_id);
 
-    const sampleTexts = [
-      `This document discusses ${file.file_name.split('.')[0]} concepts and principles. It covers various aspects and implementation details.`,
-      `${file.file_name.split('.')[0]} provides a comprehensive approach to information processing and retrieval in modern systems.`,
-      `The techniques described in this section of ${file.file_name.split('.')[0]} enable efficient data management and knowledge extraction.`,
-      `Advanced algorithms for ${file.file_name.split('.')[0]} include optimization methods and pipeline configurations.`
-    ];
+    // Simulate generating 10-20 chunks for the file
+    const numChunks = Math.floor(Math.random() * 11) + 10; // 10-20 chunks
+    const newChunks = [];
 
-    const newChunks: Chunk[] = [];
+    const mockText = "这是一个示例文本，用于模拟文档分块。这是RAG系统的一部分，我们正在实现文档分块功能。" +
+                     "检索增强生成（RAG）结合了传统的检索系统和现代的生成式AI模型。" +
+                     "在RAG工作流中，首先我们需要将文档分块，然后为每个块创建向量嵌入，" +
+                     "最后使用这些嵌入来检索与用户查询最相关的文档部分。";
 
     for (let i = 0; i < numChunks; i++) {
-      const start = i * (chunkSize - overlap);
-      const end = start + chunkSize;
+      // Randomly generate chunk size between 50 and 200 characters
+      const chunkSize = Math.floor(Math.random() * 151) + 50;
+      const startPos = Math.floor(Math.random() * (mockText.length - chunkSize));
+      const endPos = startPos + chunkSize;
 
-      const chunk: Chunk = {
-        chunk_id: generateId('c'),
+      const chunk = {
+        chunk_id: `${file.file_id}_chunk_${i+1}`,
         file_id: file.file_id,
-        content: sampleTexts[i % sampleTexts.length],
-        start_offset: start,
-        end_offset: end
+        content: mockText.substring(startPos, endPos),
+        metadata: {
+          source: file.file_name,
+          chunk_type: chunkSettings.value.strategy
+        },
+        start_offset: startPos,
+        end_offset: endPos
       };
 
       newChunks.push(chunk);
-      chunks.value.push(chunk);
-
-      // Create vector for each chunk
-      createVectorForChunk(chunk);
     }
 
+    // Add new chunks to the global chunks array
+    chunks.value = [...chunks.value, ...newChunks];
+
     return newChunks;
-  }
-
-  // Create a vector for a chunk
-  function createVectorForChunk(chunk: Chunk) {
-    const vector: VectorRecord = {
-      id: generateId('v'),
-      chunk_id: chunk.chunk_id,
-      file_id: chunk.file_id
-    };
-
-    vectors.value.push(vector);
-    return vector;
-  }
+  };
 
   // Execute a RAG query
   function performMockRagQuery(query: string) {
@@ -269,8 +270,11 @@ export const useRagDataStore = defineStore('ragData', () => {
       return scoreB - scoreA;
     });
 
-    // Take top K chunks
-    const topChunks = relevantChunks.slice(0, searchSettings.value.topK);
+    // Take top K chunks - ensure topK is treated as a number
+    const topK = typeof searchSettings.value.topK === 'string'
+      ? parseInt(searchSettings.value.topK)
+      : searchSettings.value.topK;
+    const topChunks = relevantChunks.slice(0, topK);
     const topChunkIds = topChunks.map(chunk => chunk.chunk_id);
 
     // 2. Create search log
@@ -346,6 +350,8 @@ export const useRagDataStore = defineStore('ragData', () => {
     // Actions
     initializeMockData,
     addFile,
+    deleteFile,
+    createChunksForFile,
     getChunksForFile,
     performMockRagQuery
   };

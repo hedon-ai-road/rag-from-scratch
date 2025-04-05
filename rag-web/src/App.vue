@@ -49,21 +49,20 @@ onMounted(() => {
 
 // Navigation items
 const navItems = [
-  { name: '文件上传 (File Loader)', path: '/file-loader' },
-  { name: '分块引擎 (Chunk Engine)', path: '/chunk-engine' },
-  { name: '解析工作室 (Parser Studio)', path: '/parser-studio' },
-  { name: '嵌入实验室 (Embedding Lab)', path: '/embedding-lab' },
-  { name: '向量索引器 (Vector Indexer)', path: '/vector-indexer' },
-  { name: '搜索控制台 (Search Console)', path: '/search-console' },
-  { name: '生成中心 (Generator Hub)', path: '/generator-hub' },
-  { name: '管道监控 (Pipeline Monitor)', path: '/pipeline-monitor' },
+  { name: 'File Loader', path: '/file-loader' },
+  { name: 'Chunk Engine', path: '/chunk-engine' },
+  { name: 'Embedding Engine', path: '/embedding-engine' },
+  { name: 'Vector Indexer', path: '/vector-indexer' },
+  { name: 'Search Console', path: '/search-console' },
+  { name: 'Generator Hub', path: '/generator-hub' },
+  { name: 'Pipeline Monitor', path: '/pipeline-monitor' },
 ];
 
 // Current page title based on route
 const route = useRoute();
 const currentPageTitle = computed(() => {
   const currentNav = navItems.find(item => item.path === route.path);
-  return currentNav ? currentNav.name : 'RAG 管理系统';
+  return currentNav ? currentNav.name : 'RAG Management System';
 });
 </script>
 

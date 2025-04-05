@@ -20,14 +20,9 @@ const router = createRouter({
       component: () => import('../views/ChunkEngineView.vue')
     },
     {
-      path: '/parser-studio',
-      name: 'ParserStudio',
-      component: () => import('../views/ParserStudioView.vue')
-    },
-    {
-      path: '/embedding-lab',
-      name: 'EmbeddingLab',
-      component: () => import('../views/EmbeddingLabView.vue')
+      path: '/embedding-engine',
+      name: 'EmbeddingEngine',
+      component: () => import('../views/EmbeddingEngineView.vue')
     },
     {
       path: '/vector-indexer',
