@@ -6,14 +6,12 @@
 
 - 基础 URL: `/api/v1`
 - 所有请求和响应均使用 JSON 格式
-- 认证方式: API Key (在请求头中包含 `X-API-Key: <your_api_key>`)
-- 错误响应格式:
+- 统一响应格式:
   ```json
   {
-    "error": {
-      "code": "ERROR_CODE",
-      "message": "Error description"
-    }
+    "code": 0, // 错误码，0 表示成功，其他表示失败
+    "message": "Error description", // 错误描述
+    "data": {} // 响应数据，下面的 API 中仅展示 data 字段
   }
   ```
 
@@ -137,10 +135,7 @@
 **成功响应:** (200 OK)
 
 ```json
-{
-  "success": true,
-  "message": "File and associated resources deleted successfully"
-}
+{}
 ```
 
 ## 文本分块 API
