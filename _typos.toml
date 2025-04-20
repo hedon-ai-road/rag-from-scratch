@@ -1,4 +1,5 @@
 [default.extend-words]
+coordiantes = "coordiantes"
 
 [files]
 extend-exclude = [
