@@ -18,22 +18,16 @@ Each module can be run independently for testing and can be extended with differ
 
 ## Setup
 
-1. Create a virtual environment:
+1. Install dependencies:
 
    ```
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   uv sync
    ```
 
-2. Install dependencies:
+2. Run the application:
 
    ```
-   pip install -e .
-   ```
-
-3. Run the application:
-   ```
-   python main.py
+   uv run main.py
    ```
 
 The API will be available at http://localhost:8000
