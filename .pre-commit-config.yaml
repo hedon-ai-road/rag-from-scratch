@@ -53,3 +53,11 @@ repos:
         language: rust
         files: \.rs$
         pass_filenames: false
+
+exclude: |
+  (?x)(
+    ^rag-backend-py/fixtures/.*$ |           # Exclude all files in fixtures directory
+    ^.*[\u4e00-\u9fff]+.*$ |                # Exclude files containing Chinese characters
+    ^.*\.csv$ |                             # Exclude all CSV files
+    ^.*[^a-zA-Z0-9/._-].*$                  # Exclude files with special characters
+  )

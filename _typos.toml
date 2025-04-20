@@ -11,4 +11,5 @@ extend-exclude = [
     "**/target/*",
     "**/public/*",
     "**/src/assets/*",
+    "**/fixtures/*",
 ]
