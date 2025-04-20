@@ -27,6 +27,7 @@ class FileLoaderService:
 
     # Cache structure: {md5: {loading_method: docs}}
     _docs_cache: Dict[str, Dict[str, List]] = {}
+    _file_cache: Dict[str, FileInfo] = {}
 
     async def upload_file(
         self, file: UploadFile, loading_method: Optional[str] = None
@@ -85,7 +86,7 @@ class FileLoaderService:
         docs = self._get_or_load_docs(file_id, loading_method, storage_path)
 
         # Return file info
-        return FileInfo(
+        file_info = FileInfo(
             file_id=file_id,
             file_name=filename,
             file_size=file_size,
@@ -94,6 +95,11 @@ class FileLoaderService:
             loadingMethod=loading_method,
             docs=docs,
         )
+
+        # Cache file info
+        self._file_cache[file_info.file_id] = file_info
+
+        return file_info
 
     def _get_or_load_docs(self, file_id: str, loading_method: str, path: Path):
         """
@@ -136,10 +142,26 @@ class FileLoaderService:
             List of documents
         """
         logger.info(f"Loading file: {path} with method: {loading_method}")
-        if loading_method == "PyPDF":
-            return PDFPyPDFLoader(path=path)
-        else:
-            logger.warning(f"Unknown loading method: {loading_method} for path: {path}")
+
+        try:
+            if loading_method == "PyPDF":
+                logger.info(f"Using PyPDF loader for {path}")
+                docs = PDFPyPDFLoader(path=path)
+                logger.info(
+                    f"PyPDF loaded {len(docs) if docs else 0} documents from {path}"
+                )
+                # Log the first document if available
+                if docs and len(docs) > 0:
+                    logger.info(f"First document sample: {str(docs[0])[:100]}...")
+                return docs
+            else:
+                logger.warning(
+                    f"Unknown loading method: {loading_method} for path: {path}"
+                )
+                return []
+        except Exception as e:
+            logger.error(f"Error loading file with {loading_method}: {str(e)}")
+            # Return empty list on error instead of failing
             return []
 
     async def get_all_files(self, page: int, limit: int) -> Tuple[List[FileInfo], int]:
@@ -157,25 +179,8 @@ class FileLoaderService:
         # For now, we'll read from the filesystem
         files = []
 
-        try:
-            for file_path in constants.ORIGINAL_FILES_DIR.glob("*"):
-                if file_path.is_file():
-                    file_id = file_path.stem
-                    file_stats = file_path.stat()
-
-                    files.append(
-                        FileInfo(
-                            file_id=file_id,
-                            file_name=file_path.name,
-                            file_size=file_stats.st_size,
-                            storage_path=str(file_path),
-                            created_at=datetime.fromtimestamp(file_stats.st_ctime),
-                            loadingMethod=constants.LOADING_METHODS[0],  # Default
-                        )
-                    )
-        except Exception as e:
-            logger.error(f"Error listing files: {str(e)}")
-            raise
+        for _, file in self._file_cache.items():
+            files.append(file)
 
         # Sort by creation date (newest first)
         files.sort(key=lambda x: x.created_at, reverse=True)
@@ -201,32 +206,10 @@ class FileLoaderService:
         # For now, we'll read from the filesystem
 
         # Find the file with matching ID
-        try:
-            for file_path in constants.ORIGINAL_FILES_DIR.glob(f"{file_id}.*"):
-                if file_path.is_file():
-                    file_stats = file_path.stat()
-
-                    # Get chunk and vector counts
-                    # In a real implementation, this would query databases/indices
-                    chunk_count = 0
-                    vector_count = 0
-
-                    return FileDetailInfo(
-                        file_id=file_id,
-                        file_name=file_path.name,
-                        file_size=file_stats.st_size,
-                        storage_path=str(file_path),
-                        created_at=datetime.fromtimestamp(file_stats.st_ctime),
-                        loadingMethod=constants.LOADING_METHODS[0],  # Default
-                        chunk_count=chunk_count,
-                        vector_count=vector_count,
-                    )
-
-            # If we get here, no file was found
+        if file_id in self._file_cache:
+            return self._file_cache[file_id]
+        else:
             return None
-        except Exception as e:
-            logger.error(f"Error getting file {file_id}: {str(e)}")
-            raise
 
     async def delete_file(self, file_id: str) -> bool:
         """
@@ -259,6 +242,10 @@ class FileLoaderService:
             # - Associated chunks
             # - Associated vectors
             # - Associated index entries
+
+            if file_id in self._file_cache:
+                del self._file_cache[file_id]
+                logger.info(f"Removed file cache for file {file_id}")
 
             return found
         except Exception as e:

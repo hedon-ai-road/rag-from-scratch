@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
+import { fileService } from '../services/api';
 
 // Type definitions based on data-transfer-v0.0.1.md
 interface FileMetadata {
@@ -50,12 +51,25 @@ interface QueryResult {
 
 export const useRagDataStore = defineStore('ragData', () => {
   // State
-  const files = ref<FileMetadata[]>([]);
-  const chunks = ref<Chunk[]>([]);
-  const vectors = ref<VectorRecord[]>([]);
-  const searchLogs = ref<SearchLog[]>([]);
-  const generations = ref<GenerationRecord[]>([]);
-  const latestQueryResult = ref<QueryResult | null>(null);
+  const files = ref<any[]>([]);
+  const chunks = ref<any[]>([]);
+  const vectors = ref<any[]>([]);
+  const searches = ref<any[]>([]);
+  const generations = ref<any[]>([]);
+  const loading = ref({
+    files: false,
+    chunks: false,
+    vectors: false,
+    searches: false,
+    generations: false
+  });
+  const error = ref({
+    files: null,
+    chunks: null,
+    vectors: null,
+    searches: null,
+    generations: null
+  });
 
   // Settings
   const chunkSettings = ref({
@@ -79,7 +93,7 @@ export const useRagDataStore = defineStore('ragData', () => {
   const fileCount = computed(() => files.value.length);
   const chunkCount = computed(() => chunks.value.length);
   const vectorCount = computed(() => vectors.value.length);
-  const searchCount = computed(() => searchLogs.value.length);
+  const searchCount = computed(() => searches.value.length);
   const generationCount = computed(() => generations.value.length);
 
   // Get chunks for a specific file
@@ -92,123 +106,157 @@ export const useRagDataStore = defineStore('ragData', () => {
     return `${prefix}${Math.random().toString(36).substring(2, 10)}`;
   };
 
-  // Initialize with mock data
-  function initializeMockData() {
-    // Sample files
-    const sampleFiles: FileMetadata[] = [
-      {
-        file_id: 'f1a3b5c7',
-        file_name: 'rag_guide.pdf',
-        file_size: 1024 * 1024, // 1MB
-        storage_path: './data/original/f1a3b5c7.pdf',
-        created_at: '2024-04-01T10:30:00Z',
-        loadingMethod: 'PyMuPDF'
-      },
-      {
-        file_id: 'b2c4d6e8',
-        file_name: 'embedding_models.pdf',
-        file_size: 512 * 1024, // 512KB
-        storage_path: './data/original/b2c4d6e8.pdf',
-        created_at: '2024-04-02T14:45:00Z',
-        loadingMethod: 'PyPDF'
+  // Actions
+  const fetchFiles = async (page = 1, limit = 10) => {
+    loading.value.files = true;
+    error.value.files = null;
+
+    try {
+      const response = await fileService.getAllFiles(page, limit);
+      if (response.code === 0) {
+        files.value = response.data.files;
+      } else {
+        error.value.files = response.message;
       }
-    ];
-
-    // Sample chunks
-    const sampleChunks: Chunk[] = [
-      {
-        chunk_id: 'c1b2a3d4',
-        file_id: 'f1a3b5c7',
-        content: 'RAG (Retrieval Augmented Generation) is an architecture that combines search capabilities with generative AI to produce accurate, relevant responses based on specific knowledge sources.',
-        start_offset: 0,
-        end_offset: 511
-      },
-      {
-        chunk_id: 'd5e6f7a8',
-        file_id: 'f1a3b5c7',
-        content: 'The RAG workflow consists of several key components: document ingestion, chunking, embedding generation, vector storage, retrieval, and generation using LLMs.',
-        start_offset: 384,
-        end_offset: 895
-      },
-      {
-        chunk_id: 'g7h8i9j0',
-        file_id: 'b2c4d6e8',
-        content: 'Embedding models transform text into vector representations. Popular models include OpenAI embeddings, BGE-M3, and BERT variants that create dense vector spaces.',
-        start_offset: 0,
-        end_offset: 511
-      },
-      {
-        chunk_id: 'k1l2m3n4',
-        file_id: 'b2c4d6e8',
-        content: 'Vector similarity search uses distance metrics like cosine similarity or dot product to find the most relevant context for a given query.',
-        start_offset: 384,
-        end_offset: 895
-      }
-    ];
-
-    // Sample vector records
-    const sampleVectors: VectorRecord[] = [
-      { id: 'v1b2c3d4', chunk_id: 'c1b2a3d4', file_id: 'f1a3b5c7' },
-      { id: 'v5d6e7f8', chunk_id: 'd5e6f7a8', file_id: 'f1a3b5c7' },
-      { id: 'v9g0h1i2', chunk_id: 'g7h8i9j0', file_id: 'b2c4d6e8' },
-      { id: 'v3j4k5l6', chunk_id: 'k1l2m3n4', file_id: 'b2c4d6e8' }
-    ];
-
-    // Sample search logs
-    const sampleSearchLogs: SearchLog[] = [
-      {
-        timestamp: '2024-04-05T09:15:00Z',
-        query: 'What is RAG architecture?',
-        top_chunks: ['c1b2a3d4', 'd5e6f7a8'],
-        scores: { vector: 0.82, bm25: 0.75 }
-      }
-    ];
-
-    // Sample generation records
-    const sampleGenerations: GenerationRecord[] = [
-      {
-        gen_id: 'g1234567',
-        query: 'What is RAG architecture?',
-        used_chunks: ['c1b2a3d4', 'd5e6f7a8'],
-        response: 'RAG (Retrieval Augmented Generation) is an architecture that combines search and generative AI. It works by retrieving relevant information from a knowledge base and then using that information to augment the generation process of large language models, producing more accurate and contextually relevant responses.',
-        created_at: '2024-04-05T09:15:05Z'
-      }
-    ];
-
-    // Set the initial state
-    files.value = sampleFiles;
-    chunks.value = sampleChunks;
-    vectors.value = sampleVectors;
-    searchLogs.value = sampleSearchLogs;
-    generations.value = sampleGenerations;
-  }
-
-  // Add a new file
-  const addFile = (fileInfo: Omit<FileMetadata, 'file_id' | 'created_at'> & { loadingMethod?: string }) => {
-    const file_id = `file_${Date.now()}`;
-    const fileData: FileMetadata = {
-      ...fileInfo,
-      file_id,
-      created_at: new Date().toISOString(),
-      loadingMethod: fileInfo.loadingMethod || 'PyMuPDF'
-    };
-    files.value.push(fileData);
-    return file_id;
+    } catch (err: any) {
+      error.value.files = err.message || 'Failed to fetch files';
+      console.error('Error fetching files:', err);
+    } finally {
+      loading.value.files = false;
+    }
   };
 
-  // Delete a file
-  const deleteFile = (fileId: string) => {
-    // Remove the file
-    files.value = files.value.filter(file => file.file_id !== fileId);
+  const addFile = async (file: File, loadingMethod: string) => {
+    loading.value.files = true;
+    error.value.files = null;
 
-    // Remove associated chunks
-    chunks.value = chunks.value.filter(chunk => chunk.file_id !== fileId);
+    try {
+      const response = await fileService.uploadFile(file, loadingMethod);
+      console.log('Upload file API response:', response);
 
-    // Remove associated vectors
-    vectors.value = vectors.value.filter(vector => vector.file_id !== fileId);
+      if (response.code === 0) {
+        // Ensure we keep the loadingMethod that was used during upload
+        const fileData = response.data.file;
+        // If the API returns a different loadingMethod than what we sent, override it
+        if (fileData.loadingMethod !== loadingMethod) {
+          console.warn(`API returned loading method '${fileData.loadingMethod}' but we used '${loadingMethod}'`);
+          fileData.loadingMethod = loadingMethod;
+        }
 
-    // Could also remove associated search logs and generations,
-    // but we'll keep them for history purposes
+        // Ensure the file_name is used as the display name instead of file_id
+        if (fileData.file_name) {
+          // The file_name property may already be set correctly by the backend
+          console.log(`File name from API: ${fileData.file_name}`);
+        } else {
+          // If not set, use the original file name
+          fileData.file_name = file.name;
+          console.log(`Setting file name to: ${fileData.file_name}`);
+        }
+
+        files.value.unshift(fileData);
+        return fileData.file_id;
+      } else {
+        error.value.files = response.message;
+        return null;
+      }
+    } catch (err: any) {
+      error.value.files = err.message || 'Failed to upload file';
+      console.error('Error uploading file:', err);
+      return null;
+    } finally {
+      loading.value.files = false;
+    }
+  };
+
+  const getFile = async (fileId: string) => {
+    loading.value.files = true;
+    error.value.files = null;
+
+    try {
+      const response = await fileService.getFile(fileId);
+      console.log('Get file API response:', response);
+
+      if (response.code === 0) {
+        // Find the file in our local cache to get the correct loading method
+        const cachedFile = files.value.find(f => f.file_id === fileId);
+        if (cachedFile && response.data.file) {
+          // Use the loading method from our cache if available
+          response.data.file.loadingMethod = cachedFile.loadingMethod || response.data.file.loadingMethod;
+        }
+
+        // Make sure docs is properly formed
+        if (response.data.file) {
+          // Check if docs exists
+          if (!response.data.file.docs) {
+            console.warn('No docs found in API response, initializing empty array');
+            response.data.file.docs = [];
+          }
+          // If docs is not an array, convert it to one
+          else if (!Array.isArray(response.data.file.docs)) {
+            console.warn('docs is not an array, converting to array');
+            response.data.file.docs = [response.data.file.docs];
+          }
+
+          // Validate each document in the docs array
+          if (Array.isArray(response.data.file.docs)) {
+            console.log(`Response has ${response.data.file.docs.length} documents`);
+
+            // Make sure each doc has the expected structure
+            response.data.file.docs = response.data.file.docs.map((doc: any, index: number) => {
+              // Ensure metadata exists
+              if (!doc.metadata) {
+                console.warn(`Document ${index} has no metadata, initializing empty object`);
+                doc.metadata = {};
+              }
+              // Ensure page_content exists
+              if (!doc.page_content) {
+                console.warn(`Document ${index} has no page_content, initializing empty string`);
+                doc.page_content = '';
+              }
+              return doc;
+            });
+          }
+        }
+
+        return response;
+      } else {
+        error.value.files = response.message;
+        return null;
+      }
+    } catch (err: any) {
+      error.value.files = err.message || 'Failed to get file';
+      console.error(`Error getting file ${fileId}:`, err);
+      return null;
+    } finally {
+      loading.value.files = false;
+    }
+  };
+
+  const deleteFile = async (fileId: string) => {
+    loading.value.files = true;
+    error.value.files = null;
+
+    try {
+      const response = await fileService.deleteFile(fileId);
+      if (response.code === 0) {
+        files.value = files.value.filter(file => file.file_id !== fileId);
+        return true;
+      } else {
+        error.value.files = response.message;
+        return false;
+      }
+    } catch (err: any) {
+      error.value.files = err.message || 'Failed to delete file';
+      console.error(`Error deleting file ${fileId}:`, err);
+      return false;
+    } finally {
+      loading.value.files = false;
+    }
+  };
+
+  // Initialize by fetching data
+  const initialize = async () => {
+    await fetchFiles();
   };
 
   // Create chunks for a file
@@ -288,7 +336,7 @@ export const useRagDataStore = defineStore('ragData', () => {
       scores: { vector: vectorScore, bm25: bm25Score }
     };
 
-    searchLogs.value.push(searchLog);
+    searches.value.push(searchLog);
 
     // 3. Generate a response
     let responseText = '';
@@ -316,7 +364,7 @@ export const useRagDataStore = defineStore('ragData', () => {
     generations.value.push(generationRecord);
 
     // 5. Update latest query result
-    latestQueryResult.value = {
+    const latestQueryResult: QueryResult = {
       query,
       retrievedChunks: topChunks,
       generatedResponse: responseText,
@@ -324,7 +372,7 @@ export const useRagDataStore = defineStore('ragData', () => {
       timestamp: new Date().toISOString()
     };
 
-    return latestQueryResult.value;
+    return latestQueryResult;
   }
 
   // Return everything needed by the components
@@ -333,9 +381,10 @@ export const useRagDataStore = defineStore('ragData', () => {
     files,
     chunks,
     vectors,
-    searchLogs,
+    searches,
     generations,
-    latestQueryResult,
+    loading,
+    error,
     chunkSettings,
     vectorSettings,
     searchSettings,
@@ -348,11 +397,13 @@ export const useRagDataStore = defineStore('ragData', () => {
     generationCount,
 
     // Actions
-    initializeMockData,
+    fetchFiles,
     addFile,
+    getFile,
     deleteFile,
     createChunksForFile,
     getChunksForFile,
-    performMockRagQuery
+    performMockRagQuery,
+    initialize
   };
 });

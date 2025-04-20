@@ -41,10 +41,10 @@ import { computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { useRagDataStore } from './stores/ragDataStore';
 
-// Initialize the store with mock data
+// Initialize the store with data from the backend
 const ragStore = useRagDataStore();
-onMounted(() => {
-  ragStore.initializeMockData();
+onMounted(async () => {
+  await ragStore.initialize();
 });
 
 // Navigation items
