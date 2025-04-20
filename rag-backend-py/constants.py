@@ -15,7 +15,7 @@ INDEXES_DIR = DATA_DIR / "indexes"
 LOGS_DIR = DATA_DIR / "logs"
 
 # File loading settings
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_FILE_SIZE = 128 * 1024 * 1024  # 128MB
 ALLOWED_FILE_TYPES = ["pdf", "txt", "md", "docx"]
 LOADING_METHODS = ["PyMuPDF", "PyPDF", "Unstructured", "simple_text"]
 

@@ -6,6 +6,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, validator
 
+from langchain_core.documents import Document
+
 
 class FileBase(BaseModel):
     """Base file information."""
@@ -34,6 +36,9 @@ class FileInfo(FileBase):
     storage_path: str = Field(..., description="Storage path for the file")
     created_at: datetime = Field(..., description="File creation timestamp")
     loadingMethod: Optional[str] = Field(None, description="File loading method")
+    docs: List[Document] = Field(
+        None, description="Langchian Documents generated after loading file"
+    )
 
 
 class FileDetailInfo(FileInfo):
