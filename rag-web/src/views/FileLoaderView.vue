@@ -432,7 +432,7 @@ const loadFile = async () => {
       // Switch to management tab
       activeTab.value = 'management';
     } else {
-      uploadStatus.value = `Error: Failed to upload file. ${store.error.files || ''}`;
+      uploadStatus.value = `Error: ${store.error.files || ''}`;
     }
   } catch (error: any) {
     uploadStatus.value = `Error: ${error.message || 'Unknown error occurred'}`;

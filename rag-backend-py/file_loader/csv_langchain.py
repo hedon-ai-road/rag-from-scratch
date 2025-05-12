@@ -2,7 +2,14 @@ from langchain_community.document_loaders import CSVLoader
 
 
 def load(path):
-    loader = CSVLoader(file_path=path)
+    loader = CSVLoader(
+        file_path=path,
+        csv_args={
+            "delimiter": ",",
+            "quotechar": '"',
+            "fieldnames": ["种类", "名称", "描述"],
+        },
+    )
     docs = loader.load()
     return docs
 

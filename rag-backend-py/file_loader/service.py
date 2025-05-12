@@ -15,6 +15,7 @@ import constants
 from models.file import FileDetailInfo, FileInfo
 
 from file_loader.pdf_pypdf import load as PDFPyPDFLoader
+from file_loader.error import FileLoadError
 
 
 logger = logging.getLogger("rag-backend.file_loader")
@@ -61,11 +62,11 @@ class FileLoaderService:
         # Check size limitation
         if file_size > constants.MAX_FILE_SIZE:
             max_size_mb = constants.MAX_FILE_SIZE / (1024 * 1024)
-            raise ValueError(f"File too large. Maximum size: {max_size_mb} MB")
+            raise FileLoadError(f"File too large. Maximum size: {max_size_mb} MB")
 
         # Calculate file md5 based on the content
         file_md5 = hashlib.md5(content).hexdigest()
-        file_id = file_md5
+        file_id = loading_method + "_" + file_md5
 
         # Build path
         storage_path = constants.ORIGINAL_FILES_DIR / f"{file_id}.{file_ext}"
@@ -83,7 +84,7 @@ class FileLoaderService:
         await file.seek(0)
 
         # Get or load documents based on the md5 and loading_method
-        docs = self._get_or_load_docs(file_id, loading_method, storage_path)
+        docs = self._get_or_load_docs(file_id, file_ext, loading_method, storage_path)
 
         # Return file info
         file_info = FileInfo(
@@ -101,7 +102,9 @@ class FileLoaderService:
 
         return file_info
 
-    def _get_or_load_docs(self, file_id: str, loading_method: str, path: Path):
+    def _get_or_load_docs(
+        self, file_id: str, file_ext: str, loading_method: str, path: Path
+    ):
         """
         Get documents from cache or load and cache them
 
@@ -121,7 +124,7 @@ class FileLoaderService:
             return self._docs_cache[file_id][loading_method]
 
         # Load documents
-        docs = self.load_file(loading_method, path)
+        docs = self.load_file(file_ext, loading_method, path)
 
         # Update cache
         if file_id not in self._docs_cache:
@@ -130,11 +133,12 @@ class FileLoaderService:
 
         return docs
 
-    def load_file(self, loading_method, path):
+    def load_file(self, file_ext: str, loading_method: str, path: Path):
         """
         Load a file using the specified method
 
         Args:
+            file_ext: File Extension(.pdf, .csv)
             loading_method: Loading method
             path: File path
 
@@ -143,26 +147,31 @@ class FileLoaderService:
         """
         logger.info(f"Loading file: {path} with method: {loading_method}")
 
-        try:
-            if loading_method == "PyPDF":
-                logger.info(f"Using PyPDF loader for {path}")
-                docs = PDFPyPDFLoader(path=path)
-                logger.info(
-                    f"PyPDF loaded {len(docs) if docs else 0} documents from {path}"
-                )
-                # Log the first document if available
-                if docs and len(docs) > 0:
-                    logger.info(f"First document sample: {str(docs[0])[:100]}...")
-                return docs
-            else:
-                logger.warning(
-                    f"Unknown loading method: {loading_method} for path: {path}"
-                )
-                return []
-        except Exception as e:
-            logger.error(f"Error loading file with {loading_method}: {str(e)}")
-            # Return empty list on error instead of failing
-            return []
+        if file_ext == "pdf":
+            return self.load_pdf(loading_method, path)
+        elif file_ext == "csv":
+            return self.load_csv(loading_method, path)
+        else:
+            raise FileLoadError(f"unsupported file extension: {file_ext}")
+
+    def load_pdf(self, loading_method: str, path: Path):
+        if loading_method == "PyPDF":
+            logger.info(f"Using PyPDF loader for {path}")
+            docs = PDFPyPDFLoader(path=path)
+            logger.info(
+                f"PyPDF loaded {len(docs) if docs else 0} documents from {path}"
+            )
+            # Log the first document if available
+            if docs and len(docs) > 0:
+                logger.info(f"First document sample: {str(docs[0])[:100]}...")
+            return docs
+        else:
+            raise FileLoadError(f"unsupported loading method for pdf: {loading_method}")
+
+    def load_csv(self, loading_method: str, path: Path):
+        raise FileLoadError(
+            f"unsupported file loading method for svc: {loading_method}"
+        )
 
     async def get_all_files(self, page: int, limit: int) -> Tuple[List[FileInfo], int]:
         """

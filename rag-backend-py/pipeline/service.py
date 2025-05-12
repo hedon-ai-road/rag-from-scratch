@@ -14,6 +14,7 @@ import constants
 from chunking import ChunkingService
 from embedding import EmbeddingService
 from file_loader import FileLoaderService
+from file_loader.error import FileLoadError
 from models.pipeline import (
     ChunkingStep,
     EmbeddingStep,
@@ -193,7 +194,7 @@ class PipelineService:
 
             # Save pipeline result to disk
             self._save_pipeline_result(pipeline_id, status)
-        except Exception as e:
+        except (FileLoadError, Exception) as e:
             logger.error(f"Pipeline error: {str(e)}")
 
             # Update status to reflect error

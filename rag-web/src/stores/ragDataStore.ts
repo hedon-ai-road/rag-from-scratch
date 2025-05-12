@@ -160,7 +160,7 @@ export const useRagDataStore = defineStore('ragData', () => {
         return null;
       }
     } catch (err: any) {
-      error.value.files = err.message || 'Failed to upload file';
+      error.value.files = err.response.data.detail || err.message || 'Failed to upload file';
       console.error('Error uploading file:', err);
       return null;
     } finally {
