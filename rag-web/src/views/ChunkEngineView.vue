@@ -1,13 +1,15 @@
 <template>
   <div>
-    <h1 class="text-2xl font-semibold mb-4">Chunk File</h1>
+    <h1 class="text-2xl font-semibold mb-4">Chunk Engine</h1>
 
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <!-- Chunking Configuration -->
       <div class="card">
-        <h2 class="mb-4 text-lg font-semibold">Select Document</h2>
+        <h2 class="mb-4 text-lg font-semibold">Select Document & Configure Chunking</h2>
 
+        <!-- File Selection -->
         <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Choose Document</label>
           <select
             v-model="selectedFileId"
             class="input w-full"
@@ -15,53 +17,83 @@
           >
             <option value="">Choose a document...</option>
             <option v-for="file in store.files" :key="file.file_id" :value="file.file_id">
-              {{ file.file_name }}
+              {{ file.file_name }} ({{ formatFileSize(file.file_size) }})
             </option>
           </select>
         </div>
 
+        <!-- Chunking Strategy -->
         <div class="mb-4">
-          <label class="mb-2 block text-sm font-medium text-gray-700">Chunking Method</label>
-          <select v-model="chunkingMethod" class="input w-full">
-            <option value="By Pages">By Pages</option>
-            <option value="By Sentences">By Sentences</option>
-            <option value="Fixed Size">Fixed Size</option>
-            <option value="By Paragraphs">By Paragraphs</option>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Chunking Strategy</label>
+          <select v-model="chunkingConfig.strategy" class="input w-full">
+            <option value="recursive_character">Recursive Character</option>
+            <option value="character">Character</option>
+            <option value="semantic">Semantic</option>
+            <option value="code">Code</option>
           </select>
         </div>
 
-        <div class="mb-4" v-if="chunkingMethod === 'Fixed Size'">
-          <label class="mb-2 block text-sm font-medium text-gray-700">Window Size (characters)</label>
+        <!-- Window Size -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Chunk Size: {{ chunkingConfig.windowSize }}
+          </label>
           <input
-            v-model="store.chunkSettings.window_size"
-            type="number"
+            type="range"
+            v-model.number="chunkingConfig.windowSize"
             min="100"
-            max="2048"
-            step="128"
-            class="input w-full"
+            max="2000"
+            step="50"
+            class="w-full"
           />
+          <div class="flex justify-between text-xs text-gray-500 mt-1">
+            <span>100</span>
+            <span>2000</span>
+          </div>
         </div>
 
-        <div class="mb-4" v-if="chunkingMethod === 'Fixed Size'">
-          <label class="mb-2 block text-sm font-medium text-gray-700">Overlap Size (characters)</label>
+        <!-- Overlap -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Overlap: {{ chunkingConfig.overlap }}
+          </label>
           <input
-            v-model="store.chunkSettings.overlap"
-            type="number"
+            type="range"
+            v-model.number="chunkingConfig.overlap"
             min="0"
-            max="512"
-            step="32"
-            class="input w-full"
+            :max="Math.floor(chunkingConfig.windowSize / 2)"
+            step="10"
+            class="w-full"
           />
+          <div class="flex justify-between text-xs text-gray-500 mt-1">
+            <span>0</span>
+            <span>{{ Math.floor(chunkingConfig.windowSize / 2) }}</span>
+          </div>
         </div>
 
-        <div>
+        <!-- Action Buttons -->
+        <div class="space-y-2">
           <button
-            class="btn btn-primary w-full"
             @click="createChunks"
-            :disabled="!selectedFileId"
+            class="btn btn-primary w-full"
+            :disabled="!selectedFileId || isProcessing"
           >
-            Create Chunks
+            <span v-if="isProcessing">Creating Chunks...</span>
+            <span v-else>Create Chunks</span>
           </button>
+
+          <button
+            @click="loadExistingChunks"
+            class="btn btn-secondary w-full"
+            :disabled="!selectedFileId || !hasExistingChunks"
+          >
+            Load Existing Chunks
+          </button>
+        </div>
+
+        <!-- Status Message -->
+        <div v-if="statusMessage" class="mt-4 p-3 rounded" :class="statusClass">
+          {{ statusMessage }}
         </div>
       </div>
 
@@ -83,6 +115,13 @@
             >
               Document Management
             </button>
+            <button
+              @click="activeTab = 'stats'"
+              class="px-4 py-2 font-medium border-b-2 transition-colors"
+              :class="activeTab === 'stats' ? 'border-blue-500 text-blue-600' : 'border-transparent hover:border-gray-300'"
+            >
+              Statistics
+            </button>
           </div>
         </div>
 
@@ -93,20 +132,59 @@
           </div>
 
           <div v-else>
-            <h3 class="font-medium text-lg mb-2">{{ selectedFile.file_name }} - {{ chunks.length }} Chunks</h3>
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="font-medium text-lg">{{ selectedFile.file_name }} - {{ totalChunks }} Chunks</h3>
+              <div class="flex items-center space-x-4">
+                <select v-model="selectedStrategy" @change="loadChunks" class="input text-sm">
+                  <option value="">All Strategies</option>
+                  <option v-for="strategy in availableStrategies" :key="strategy" :value="strategy">
+                    {{ strategy.replace('_', ' ') }}
+                  </option>
+                </select>
+                <span class="text-sm text-gray-500">
+                  {{ chunks.length }} of {{ totalChunks }} chunks
+                </span>
+              </div>
+            </div>
+
             <div class="rounded bg-gray-50 p-4 h-96 overflow-y-auto">
               <div
-                v-for="chunk in chunks"
+                v-for="(chunk, index) in chunks"
                 :key="chunk.chunk_id"
                 class="mb-3 p-3 rounded border border-green-100 bg-green-50 relative"
               >
                 <div class="mb-1 flex items-center justify-between">
-                  <span class="text-sm font-semibold text-green-800">Chunk {{ chunk.chunk_id }}</span>
+                  <span class="text-sm font-semibold text-green-800">
+                    Chunk {{ index + 1 + (currentPage - 1) * itemsPerPage }}
+                  </span>
                   <span class="text-xs text-gray-500">
-                    Position: {{ chunk.start_offset }}-{{ chunk.end_offset }}
+                    {{ chunk.content.length }} characters
                   </span>
                 </div>
                 <p class="text-sm">{{ chunk.content }}</p>
+              </div>
+            </div>
+
+            <!-- Pagination -->
+            <div v-if="totalPages > 1" class="mt-4 flex justify-center">
+              <div class="flex space-x-2">
+                <button
+                  @click="previousPage"
+                  :disabled="currentPage === 1"
+                  class="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span class="px-3 py-1 text-sm text-gray-600">
+                  {{ currentPage }} / {{ totalPages }}
+                </span>
+                <button
+                  @click="nextPage"
+                  :disabled="currentPage === totalPages"
+                  class="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Next
+                </button>
               </div>
             </div>
           </div>
@@ -125,7 +203,7 @@
                   <p class="font-medium">{{ file.file_name }}</p>
                   <p class="text-sm text-gray-500">
                     Size: {{ formatFileSize(file.file_size) }} |
-                    Chunks: {{ getChunkCount(file.file_id) }}
+                    Method: {{ file.loadingMethod || 'Unknown' }}
                   </p>
                 </div>
                 <div class="flex space-x-2">
@@ -140,32 +218,43 @@
             </li>
           </ul>
         </div>
-      </div>
-    </div>
 
-    <!-- Chunking Stats -->
-    <div class="mt-6 card" v-if="chunks.length > 0">
-      <h2 class="mb-4 text-lg font-semibold">Chunking Statistics</h2>
+        <!-- Statistics Tab -->
+        <div v-if="activeTab === 'stats'" class="space-y-4">
+          <div v-if="!selectedFile" class="text-gray-500 text-center py-8">
+            Select a document to view statistics
+          </div>
 
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="rounded bg-blue-50 p-4">
-          <p class="text-sm text-blue-700">Total Chunks</p>
-          <p class="text-2xl font-semibold text-blue-800">{{ chunks.length }}</p>
-        </div>
+          <div v-else-if="!chunkStats" class="text-gray-500 text-center py-8">
+            No chunking statistics available for this document
+          </div>
 
-        <div class="rounded bg-green-50 p-4">
-          <p class="text-sm text-green-700">Average Chunk Size</p>
-          <p class="text-2xl font-semibold text-green-800">{{ avgChunkSize }} chars</p>
-        </div>
+          <div v-else>
+            <h3 class="font-medium text-lg mb-4">{{ selectedFile.file_name }} Statistics</h3>
 
-        <div class="rounded bg-purple-50 p-4">
-          <p class="text-sm text-purple-700">Method Used</p>
-          <p class="text-2xl font-semibold text-purple-800">{{ chunkingMethod }}</p>
-        </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-blue-50 p-4 rounded">
+                <p class="text-sm text-blue-700">Total Documents</p>
+                <p class="text-2xl font-semibold text-blue-800">{{ chunkStats.document_count }}</p>
+              </div>
 
-        <div class="rounded bg-amber-50 p-4">
-          <p class="text-sm text-amber-700">Document Coverage</p>
-          <p class="text-2xl font-semibold text-amber-800">100%</p>
+              <div class="bg-green-50 p-4 rounded">
+                <p class="text-sm text-green-700">Total Chunks</p>
+                <p class="text-2xl font-semibold text-green-800">{{ chunkStats.total_chunks }}</p>
+              </div>
+            </div>
+
+            <div v-if="Object.keys(chunkStats.chunk_strategies).length > 0" class="mt-4">
+              <h4 class="font-medium text-gray-900 mb-2">Strategies Used</h4>
+              <div class="space-y-2">
+                <div v-for="(count, strategy) in chunkStats.chunk_strategies" :key="strategy"
+                     class="flex justify-between items-center p-3 bg-gray-50 rounded">
+                  <span class="capitalize">{{ String(strategy).replace('_', ' ') }}</span>
+                  <span class="font-medium">{{ count }} chunks</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -173,15 +262,31 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import api from '../services/api';
 import { useRagDataStore } from '../stores/ragDataStore';
 
 const store = useRagDataStore();
+
+// State
 const selectedFileId = ref('');
-const chunkingMethod = ref('By Pages');
 const activeTab = ref('preview');
-const processingStatus = ref('');
 const isProcessing = ref(false);
+const statusMessage = ref('');
+const chunks = ref<any[]>([]);
+const totalChunks = ref(0);
+const currentPage = ref(1);
+const itemsPerPage = ref(10);
+const selectedStrategy = ref('');
+const availableStrategies = ref<string[]>([]);
+const chunkStats = ref<any>(null);
+
+// Chunking configuration
+const chunkingConfig = ref({
+  strategy: 'recursive_character',
+  windowSize: 500,
+  overlap: 50,
+});
 
 // Computed properties
 const selectedFile = computed(() => {
@@ -189,66 +294,158 @@ const selectedFile = computed(() => {
   return store.files.find(file => file.file_id === selectedFileId.value) || null;
 });
 
-const chunks = computed(() => {
-  if (!selectedFileId.value) return [];
-  return store.getChunksForFile(selectedFileId.value);
+const hasExistingChunks = computed(() => availableStrategies.value.length > 0);
+const totalPages = computed(() => Math.ceil(totalChunks.value / itemsPerPage.value));
+
+const statusClass = computed(() => {
+  if (statusMessage.value.includes('Success')) {
+    return 'bg-green-100 text-green-700';
+  } else if (statusMessage.value.includes('Error')) {
+    return 'bg-red-100 text-red-700';
+  } else {
+    return 'bg-blue-100 text-blue-700';
+  }
 });
 
-const avgChunkSize = computed(() => {
-  if (!chunks.value.length) return 0;
+// Initialize data
+onMounted(async () => {
+  await store.initialize();
+});
 
-  const totalSize = chunks.value.reduce((sum, chunk) => {
-    return sum + (chunk.end_offset - chunk.start_offset);
-  }, 0);
-
-  return Math.round(totalSize / chunks.value.length);
+// Watch for window size changes to adjust overlap maximum
+watch(() => chunkingConfig.value.windowSize, (newSize) => {
+  const maxOverlap = Math.floor(newSize / 2);
+  if (chunkingConfig.value.overlap > maxOverlap) {
+    chunkingConfig.value.overlap = maxOverlap;
+  }
 });
 
 // Methods
-const onFileSelect = () => {
-  if (selectedFileId.value) {
-    activeTab.value = 'preview';
+const onFileSelect = async () => {
+  if (!selectedFileId.value) {
+    chunks.value = [];
+    availableStrategies.value = [];
+    chunkStats.value = null;
+    return;
   }
+
+  activeTab.value = 'preview';
+  await loadFileInfo();
 };
 
 const selectFile = (fileId: string) => {
   selectedFileId.value = fileId;
-  activeTab.value = 'preview';
+  onFileSelect();
 };
 
-const getChunkCount = (fileId: string) => {
-  return store.getChunksForFile(fileId).length;
+const loadFileInfo = async () => {
+  if (!selectedFileId.value) return;
+
+  try {
+    // URL encode the file_id for API calls
+    const encodedFileId = encodeURIComponent(selectedFileId.value);
+
+    // Load chunk strategies
+    const strategiesResponse = await api.get(`/files/${encodedFileId}/chunk-strategies`);
+    if (strategiesResponse.status === 200 && strategiesResponse.data.code === 0) {
+      availableStrategies.value = strategiesResponse.data.data.strategies || [];
+    }
+
+    // Load chunk statistics
+    const statsResponse = await api.get(`/files/${encodedFileId}/chunk-stats`);
+    if (statsResponse.status === 200 && statsResponse.data.code === 0) {
+      chunkStats.value = statsResponse.data.data.stats;
+    }
+  } catch (error) {
+    console.error('Error loading file info:', error);
+  }
 };
 
-const createChunks = () => {
-  if (!selectedFileId.value || !selectedFile.value) return;
+const createChunks = async () => {
+  if (!selectedFileId.value) return;
 
   isProcessing.value = true;
-  processingStatus.value = `Chunking document ${selectedFile.value.file_name} using ${chunkingMethod.value}...`;
+  statusMessage.value = 'Creating chunks...';
 
-  // Set chunking strategy in store based on selected method
-  store.chunkSettings.strategy = chunkingMethod.value === 'By Sentences' ? 'semantic' : 'sliding_window';
+  try {
+    // URL encode the file_id for API calls
+    const encodedFileId = encodeURIComponent(selectedFileId.value);
 
-  // Simulate async processing
-  setTimeout(() => {
-    // Find and remove existing chunks for this file (to avoid duplicates)
-    const existingChunks = store.getChunksForFile(selectedFileId.value);
-    if (existingChunks.length > 0) {
-      // In a real app, we would call a method to remove them from the store
-      // For now, we'll just let the store's createChunksForFile method regenerate them
+    const response = await api.post(`/files/${encodedFileId}/chunks`, {
+      chunk_strategy: chunkingConfig.value.strategy,
+      window_size: chunkingConfig.value.windowSize,
+      overlap: chunkingConfig.value.overlap,
+    });
+
+    if (response.status === 200 && response.data.code === 0) {
+      statusMessage.value = `Success: Created ${response.data.data.chunk_count} chunks using ${chunkingConfig.value.strategy} strategy`;
+
+      // Reload file info and chunks
+      await loadFileInfo();
+      await loadChunks();
+    } else {
+      statusMessage.value = `Error: ${response.data.message}`;
     }
-
-    // Generate new chunks
-    if (selectedFile.value) {
-      store.createChunksForFile(selectedFile.value);
-      processingStatus.value = `Successfully chunked ${selectedFile.value.file_name} into ${chunks.value.length} chunks.`;
-    }
-
+  } catch (error: any) {
+    statusMessage.value = `Error: ${error.response?.data?.message || error.message || 'Failed to create chunks'}`;
+  } finally {
     isProcessing.value = false;
-  }, 1500);
+  }
 };
 
-// Format file size for display
+const loadExistingChunks = async () => {
+  await loadChunks();
+};
+
+const loadChunks = async () => {
+  if (!selectedFileId.value) return;
+
+  try {
+    // URL encode the file_id for API calls
+    const encodedFileId = encodeURIComponent(selectedFileId.value);
+
+    const params = new URLSearchParams({
+      page: currentPage.value.toString(),
+      limit: itemsPerPage.value.toString(),
+    });
+
+    if (selectedStrategy.value) {
+      params.append('chunk_strategy', selectedStrategy.value);
+    }
+
+    const response = await api.get(`/files/${encodedFileId}/chunks?${params}`);
+
+    if (response.status === 200 && response.data.code === 0) {
+      chunks.value = response.data.data.chunks || [];
+      totalChunks.value = response.data.data.chunk_count || 0;
+    } else {
+      console.error('Failed to load chunks:', response.data.message);
+      chunks.value = [];
+      totalChunks.value = 0;
+    }
+  } catch (error) {
+    console.error('Error loading chunks:', error);
+    chunks.value = [];
+    totalChunks.value = 0;
+  }
+};
+
+// Pagination
+const nextPage = () => {
+  if (currentPage.value < totalPages.value) {
+    currentPage.value++;
+    loadChunks();
+  }
+};
+
+const previousPage = () => {
+  if (currentPage.value > 1) {
+    currentPage.value--;
+    loadChunks();
+  }
+};
+
+// Utility functions
 const formatFileSize = (size: number): string => {
   if (size < 1024) {
     return `${size} B`;

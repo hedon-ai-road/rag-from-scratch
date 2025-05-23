@@ -3,6 +3,7 @@ API router for chunk operations.
 """
 import logging
 from typing import Optional
+import urllib.parse
 
 from fastapi import APIRouter, Body, HTTPException, Path, Query
 from fastapi.responses import JSONResponse
@@ -20,13 +21,16 @@ chunking_service = ChunkingService()
 
 @router.post("/files/{file_id}/chunks", response_model=BaseResponse)
 async def create_chunks(
-    file_id: str = Path(..., description="File ID"),
+    file_id: str = Path(..., description="File ID", pattern=r".+"),
     chunk_request: ChunkCreateRequest = Body(...),
 ):
     """
-    Create chunks for a file.
+    Create chunks for a file using documents loaded from database.
     """
     try:
+        # URL decode the file_id
+        file_id = urllib.parse.unquote(file_id)
+
         chunks = await chunking_service.create_chunks(
             file_id,
             chunk_request.chunk_strategy,
@@ -49,7 +53,7 @@ async def create_chunks(
             status_code=404,
             content={
                 "code": 1,
-                "message": f"File with ID {file_id} not found",
+                "message": f"No documents found for file {file_id}. Please load the file first.",
                 "data": None,
             },
         )
@@ -60,15 +64,23 @@ async def create_chunks(
 
 @router.get("/files/{file_id}/chunks", response_model=BaseResponse)
 async def get_chunks(
-    file_id: str = Path(..., description="File ID"),
+    file_id: str = Path(..., description="File ID", pattern=r".+"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(10, ge=1, le=100, description="Items per page"),
+    chunk_strategy: Optional[str] = Query(
+        None, description="Filter by chunking strategy"
+    ),
 ):
     """
-    Get chunks for a file.
+    Get chunks for a file from database.
     """
     try:
-        chunks, total = await chunking_service.get_chunks(file_id, page, limit)
+        # URL decode the file_id
+        file_id = urllib.parse.unquote(file_id)
+
+        chunks, total = await chunking_service.get_chunks(
+            file_id, page, limit, chunk_strategy
+        )
 
         return {
             "code": 0,
@@ -77,6 +89,7 @@ async def get_chunks(
                 "file_id": file_id,
                 "chunk_count": total,
                 "chunks": chunks,
+                "chunk_strategy": chunk_strategy,
                 "pagination": {
                     "total": total,
                     "page": page,
@@ -85,17 +98,60 @@ async def get_chunks(
                 },
             },
         }
-    except FileNotFoundError:
-        return JSONResponse(
-            status_code=404,
-            content={
-                "code": 1,
-                "message": f"File with ID {file_id} not found",
-                "data": None,
-            },
-        )
     except Exception as e:
         logger.error(f"Error getting chunks for file {file_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/files/{file_id}/chunk-strategies", response_model=BaseResponse)
+async def get_file_chunk_strategies(
+    file_id: str = Path(..., description="File ID", pattern=r".+"),
+):
+    """
+    Get all chunking strategies used for a file.
+    """
+    try:
+        # URL decode the file_id
+        file_id = urllib.parse.unquote(file_id)
+
+        strategies = await chunking_service.get_chunk_strategies(file_id)
+
+        return {
+            "code": 0,
+            "message": "Success",
+            "data": {
+                "file_id": file_id,
+                "strategies": strategies,
+            },
+        }
+    except Exception as e:
+        logger.error(f"Error getting chunk strategies for file {file_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/files/{file_id}/chunk-stats", response_model=BaseResponse)
+async def get_file_chunk_stats(
+    file_id: str = Path(..., description="File ID", pattern=r".+"),
+):
+    """
+    Get chunking statistics for a file.
+    """
+    try:
+        # URL decode the file_id
+        file_id = urllib.parse.unquote(file_id)
+
+        stats = await chunking_service.get_chunk_stats(file_id)
+
+        return {
+            "code": 0,
+            "message": "Success",
+            "data": {
+                "file_id": file_id,
+                "stats": stats,
+            },
+        }
+    except Exception as e:
+        logger.error(f"Error getting chunk stats for file {file_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -4,8 +4,12 @@ Base schema models for the API.
 from typing import Any, Generic, List, Optional, TypeVar
 
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.declarative import declarative_base
 
 T = TypeVar("T")  # Type variable for generic models
+
+# SQLAlchemy Base class for database models
+Base = declarative_base()
 
 
 class BaseResponse(BaseModel):

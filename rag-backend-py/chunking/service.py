@@ -8,6 +8,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import constants
 from models.chunk import ChunkInfo, ChunkSettings
+from database import DatabaseService
+from .recursive_character_text_splitter import RecursiveCharacterTextSplitter
+from .character_text_splitter import CharacterTextSplitter
+from .llamaindex_semantics_splitter import LlamaindexSemanticsSplitter
+from .recursive_character_code_splitter import RecursiveCharacterCodeSplitter
 
 logger = logging.getLogger("rag-backend.chunking")
 
@@ -16,6 +21,9 @@ class ChunkingService:
     """
     Service for handling text chunking operations.
     """
+
+    def __init__(self):
+        self.db_service = DatabaseService()
 
     async def create_chunks(
         self,
@@ -26,7 +34,7 @@ class ChunkingService:
         custom_options: Optional[Dict[str, Any]] = None,
     ) -> List[ChunkInfo]:
         """
-        Create chunks for a file.
+        Create chunks for a file using loaded documents from database.
 
         Args:
             file_id: ID of the file to chunk
@@ -38,204 +46,242 @@ class ChunkingService:
         Returns:
             List of created chunks
         """
-        # Find the file
-        file_paths = list(constants.ORIGINAL_FILES_DIR.glob(f"{file_id}.*"))
-        if not file_paths:
-            raise FileNotFoundError(f"File with ID {file_id} not found")
-
-        file_path = file_paths[0]
-
-        # Here we would implement actual chunking based on the strategy
-        # For now, we'll just create a simple sliding window chunking simulation
-        chunks = []
-
         try:
-            # Read file content
-            with open(file_path, "rb") as f:
-                content = f.read().decode("utf-8", errors="replace")
+            # Get documents from database
+            documents = self.db_service.get_documents(file_id)
+            if not documents:
+                raise FileNotFoundError(f"No documents found for file {file_id}")
+
+            logger.info(f"Found {len(documents)} documents for file {file_id}")
+
+            # Convert to LangChain documents for processing
+            langchain_docs = [doc.to_langchain_document() for doc in documents]
 
             # Apply chunking strategy
-            if chunk_strategy == "sliding_window":
-                chunks = self._sliding_window_chunking(
-                    file_id, content, window_size, overlap
+            chunks_data = []
+            if chunk_strategy == "recursive_character":
+                chunks_data = self._recursive_character_chunking(
+                    file_id, langchain_docs, window_size, overlap
+                )
+            elif chunk_strategy == "character":
+                chunks_data = self._character_chunking(
+                    file_id, langchain_docs, window_size, overlap
                 )
             elif chunk_strategy == "semantic":
-                chunks = self._semantic_chunking(file_id, content, window_size)
+                chunks_data = self._semantic_chunking(
+                    file_id, langchain_docs, window_size, custom_options
+                )
+            elif chunk_strategy == "code":
+                chunks_data = self._code_chunking(
+                    file_id, langchain_docs, window_size, overlap
+                )
             else:
                 raise ValueError(f"Unsupported chunking strategy: {chunk_strategy}")
 
-            # Save chunks to disk
-            self._save_chunks(file_id, chunks)
+            # Save chunks to database
+            chunk_ids = self.db_service.save_chunks(
+                file_id, chunks_data, chunk_strategy, window_size, overlap
+            )
 
+            # Convert to ChunkInfo objects for response
+            chunks = []
+            for i, chunk_data in enumerate(chunks_data):
+                chunk = ChunkInfo(
+                    chunk_id=chunk_ids[i],
+                    file_id=file_id,
+                    content=chunk_data["content"],
+                    start_offset=chunk_data.get("start_offset"),
+                    end_offset=chunk_data.get("end_offset"),
+                )
+                chunks.append(chunk)
+
+            logger.info(
+                f"Created {len(chunks)} chunks for file {file_id} using strategy {chunk_strategy}"
+            )
             return chunks
+
         except Exception as e:
             logger.error(f"Error chunking file {file_id}: {str(e)}")
             raise
 
-    def _sliding_window_chunking(
-        self, file_id: str, content: str, window_size: int, overlap: int
-    ) -> List[ChunkInfo]:
+    def _recursive_character_chunking(
+        self, file_id: str, documents: List[Any], chunk_size: int, overlap: int
+    ) -> List[Dict[str, Any]]:
         """
-        Apply sliding window chunking.
-
-        Args:
-            file_id: ID of the file
-            content: Text content
-            window_size: Size of each chunk window
-            overlap: Overlap size between chunks
-
-        Returns:
-            List of chunks
+        Apply recursive character chunking using proper text splitter.
         """
-        chunks = []
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size, chunk_overlap=overlap
+        )
 
-        # Simple sliding window implementation
-        text_length = len(content)
-        start = 0
+        chunks_data = []
+        for doc_idx, document in enumerate(documents):
+            # Split the document
+            splits = splitter.split_documents([document])
 
-        while start < text_length:
-            end = min(start + window_size, text_length)
+            for split_idx, split in enumerate(splits):
+                chunk_data = {
+                    "content": split.page_content,
+                    "metadata": split.metadata,
+                    "document_id": document.metadata.get("doc_id")
+                    if hasattr(document, "metadata")
+                    else None,
+                    "start_offset": None,  # These would need to be calculated if needed
+                    "end_offset": None,
+                }
+                chunks_data.append(chunk_data)
 
-            # Create chunk
-            chunk_id = str(uuid.uuid4())
-            chunk = ChunkInfo(
-                chunk_id=chunk_id,
-                file_id=file_id,
-                content=content[start:end],
-                start_offset=start,
-                end_offset=end,
-            )
-            chunks.append(chunk)
+        return chunks_data
 
-            # Move window
-            start = start + window_size - overlap
-            if start >= text_length:
-                break
+    def _character_chunking(
+        self, file_id: str, documents: List[Any], chunk_size: int, overlap: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Apply character chunking using proper text splitter.
+        """
+        splitter = CharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
 
-        return chunks
+        chunks_data = []
+        for doc_idx, document in enumerate(documents):
+            # Split the document
+            splits = splitter.split_documents([document])
+
+            for split_idx, split in enumerate(splits):
+                chunk_data = {
+                    "content": split.page_content,
+                    "metadata": split.metadata,
+                    "document_id": document.metadata.get("doc_id")
+                    if hasattr(document, "metadata")
+                    else None,
+                    "start_offset": None,
+                    "end_offset": None,
+                }
+                chunks_data.append(chunk_data)
+
+        return chunks_data
 
     def _semantic_chunking(
-        self, file_id: str, content: str, chunk_size: int
-    ) -> List[ChunkInfo]:
+        self,
+        file_id: str,
+        documents: List[Any],
+        chunk_size: int,
+        custom_options: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
         """
-        Apply semantic chunking.
-
-        Args:
-            file_id: ID of the file
-            content: Text content
-            chunk_size: Target size for chunks
-
-        Returns:
-            List of chunks
+        Apply semantic chunking using LlamaIndex semantic splitter.
         """
-        # In a real implementation, this would use a language model to split by meaning
-        # For now, we'll just simulate by splitting on paragraphs
+        splitter = LlamaindexSemanticsSplitter(chunk_size=chunk_size)
 
-        chunks = []
-        paragraphs = content.split("\n\n")
+        chunks_data = []
+        for doc_idx, document in enumerate(documents):
+            # Split the document
+            splits = splitter.split_documents([document])
 
-        start_offset = 0
-        current_chunk = []
-        current_length = 0
+            for split_idx, split in enumerate(splits):
+                chunk_data = {
+                    "content": split.page_content,
+                    "metadata": split.metadata,
+                    "document_id": document.metadata.get("doc_id")
+                    if hasattr(document, "metadata")
+                    else None,
+                    "start_offset": None,
+                    "end_offset": None,
+                }
+                chunks_data.append(chunk_data)
 
-        for para in paragraphs:
-            para_length = len(para)
+        return chunks_data
 
-            if current_length + para_length > chunk_size and current_chunk:
-                # Create chunk
-                chunk_content = "\n\n".join(current_chunk)
-                chunk_id = str(uuid.uuid4())
-                chunk = ChunkInfo(
-                    chunk_id=chunk_id,
-                    file_id=file_id,
-                    content=chunk_content,
-                    start_offset=start_offset,
-                    end_offset=start_offset + len(chunk_content),
-                )
-                chunks.append(chunk)
-
-                # Reset for next chunk
-                start_offset += len(chunk_content)
-                current_chunk = [para]
-                current_length = para_length
-            else:
-                current_chunk.append(para)
-                current_length += para_length
-
-        # Add the last chunk if there's anything left
-        if current_chunk:
-            chunk_content = "\n\n".join(current_chunk)
-            chunk_id = str(uuid.uuid4())
-            chunk = ChunkInfo(
-                chunk_id=chunk_id,
-                file_id=file_id,
-                content=chunk_content,
-                start_offset=start_offset,
-                end_offset=start_offset + len(chunk_content),
-            )
-            chunks.append(chunk)
-
-        return chunks
-
-    def _save_chunks(self, file_id: str, chunks: List[ChunkInfo]) -> None:
+    def _code_chunking(
+        self, file_id: str, documents: List[Any], chunk_size: int, overlap: int
+    ) -> List[Dict[str, Any]]:
         """
-        Save chunks to disk.
-
-        Args:
-            file_id: ID of the file
-            chunks: List of chunks to save
+        Apply code-specific chunking using recursive character code splitter.
         """
-        # Create directory if it doesn't exist
-        chunk_dir = constants.CHUNKS_DIR / file_id
-        chunk_dir.mkdir(parents=True, exist_ok=True)
+        splitter = RecursiveCharacterCodeSplitter(
+            chunk_size=chunk_size, chunk_overlap=overlap
+        )
 
-        # Save each chunk
-        for chunk in chunks:
-            chunk_path = chunk_dir / f"{chunk.chunk_id}.json"
-            with open(chunk_path, "w") as f:
-                json.dump(chunk.dict(), f, indent=2)
+        chunks_data = []
+        for doc_idx, document in enumerate(documents):
+            # Split the document
+            splits = splitter.split_documents([document])
+
+            for split_idx, split in enumerate(splits):
+                chunk_data = {
+                    "content": split.page_content,
+                    "metadata": split.metadata,
+                    "document_id": document.metadata.get("doc_id")
+                    if hasattr(document, "metadata")
+                    else None,
+                    "start_offset": None,
+                    "end_offset": None,
+                }
+                chunks_data.append(chunk_data)
+
+        return chunks_data
 
     async def get_chunks(
-        self, file_id: str, page: int, limit: int
+        self, file_id: str, page: int, limit: int, chunk_strategy: Optional[str] = None
     ) -> Tuple[List[ChunkInfo], int]:
         """
-        Get chunks for a file.
+        Get chunks for a file from database.
 
         Args:
             file_id: ID of the file
             page: Page number (1-indexed)
             limit: Number of items per page
+            chunk_strategy: Optional strategy filter
 
         Returns:
             Tuple of (list of chunks, total count)
         """
-        # Check if file exists
-        file_paths = list(constants.ORIGINAL_FILES_DIR.glob(f"{file_id}.*"))
-        if not file_paths:
-            raise FileNotFoundError(f"File with ID {file_id} not found")
-
-        # Find chunks for the file
-        chunk_dir = constants.CHUNKS_DIR / file_id
-        if not chunk_dir.exists():
-            return [], 0
-
-        chunks = []
         try:
-            # Load chunks from disk
-            for chunk_path in sorted(chunk_dir.glob("*.json")):
-                with open(chunk_path, "r") as f:
-                    chunk_data = json.load(f)
-                    chunks.append(ChunkInfo(**chunk_data))
+            # Get chunks from database
+            db_chunks, total_count = self.db_service.get_chunks(
+                file_id, chunk_strategy, page, limit
+            )
+
+            # Convert to ChunkInfo objects
+            chunks = []
+            for db_chunk in db_chunks:
+                chunk = ChunkInfo(
+                    chunk_id=db_chunk.id,
+                    file_id=db_chunk.file_id,
+                    content=db_chunk.content,
+                    start_offset=db_chunk.start_offset,
+                    end_offset=db_chunk.end_offset,
+                )
+                chunks.append(chunk)
+
+            return chunks, total_count
+
         except Exception as e:
             logger.error(f"Error loading chunks for file {file_id}: {str(e)}")
             raise
 
-        # Apply pagination
-        start_idx = (page - 1) * limit
-        end_idx = start_idx + limit
-        paginated_chunks = chunks[start_idx:end_idx]
+    async def get_chunk_strategies(self, file_id: str) -> List[str]:
+        """
+        Get all chunking strategies used for a file.
 
-        return paginated_chunks, len(chunks)
+        Args:
+            file_id: File ID
+
+        Returns:
+            List of strategy names
+        """
+        return self.db_service.get_file_chunk_strategies(file_id)
+
+    async def get_chunk_stats(self, file_id: str) -> Dict[str, Any]:
+        """
+        Get chunking statistics for a file.
+
+        Args:
+            file_id: File ID
+
+        Returns:
+            Dictionary with statistics
+        """
+        return self.db_service.get_chunk_stats(file_id)
 
     async def update_settings(
         self, strategy: str, window_size: int, overlap: int
@@ -269,21 +315,3 @@ class ChunkingService:
             overlap=constants.DEFAULT_OVERLAP,
             strategy=constants.DEFAULT_CHUNK_STRATEGY,
         )
-
-
-if __name__ == "__main__":
-    # For testing the service directly
-    import asyncio
-
-    async def test_chunking_service():
-        # Create test directories
-        constants.ORIGINAL_FILES_DIR.mkdir(parents=True, exist_ok=True)
-        constants.CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
-
-        service = ChunkingService()
-
-        # Test get settings
-        settings = await service.get_settings()
-        print(f"Chunk settings: {settings}")
-
-    asyncio.run(test_chunking_service())

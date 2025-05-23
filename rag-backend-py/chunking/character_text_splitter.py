@@ -1,5 +1,21 @@
 from langchain_core.documents import Document
-from langchain_text_splitters import CharacterTextSplitter
+from langchain_text_splitters import (
+    CharacterTextSplitter as LangChainCharacterTextSplitter,
+)
+from typing import List
+
+
+class CharacterTextSplitter:
+    """Character text splitter."""
+
+    def __init__(self, chunk_size: int = 500, chunk_overlap: int = 20):
+        self.splitter = LangChainCharacterTextSplitter(
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap
+        )
+
+    def split_documents(self, documents: List[Document]) -> List[Document]:
+        """Split documents into chunks."""
+        return self.splitter.split_documents(documents)
 
 
 def chunk(docs: list[Document], chunk_size=500, chunk_overlap=20):
@@ -9,7 +25,7 @@ def chunk(docs: list[Document], chunk_size=500, chunk_overlap=20):
     maybe you would see:
         Created a chunk of size 87, which is longer than the specified 50
     """
-    text_splitter = CharacterTextSplitter(
+    text_splitter = LangChainCharacterTextSplitter(
         chunk_size=chunk_size, chunk_overlap=chunk_overlap
     )
     chunks = text_splitter.split_documents(docs)

@@ -1,6 +1,22 @@
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_text_splitters import Language
+from typing import List
+
+
+class RecursiveCharacterCodeSplitter:
+    """Recursive character code splitter."""
+
+    def __init__(self, chunk_size: int = 500, chunk_overlap: int = 20):
+        self.splitter = RecursiveCharacterTextSplitter.from_language(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            language=Language.PYTHON,
+        )
+
+    def split_documents(self, documents: List[Document]) -> List[Document]:
+        """Split documents into chunks."""
+        return self.splitter.split_documents(documents)
 
 
 def chunk(docs: list[Document], chunk_size=500, chunk_overlap=20):

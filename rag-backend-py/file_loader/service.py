@@ -14,6 +14,7 @@ from fastapi import UploadFile
 
 import constants
 from models.file import FileDetailInfo, FileInfo
+from database import DatabaseService
 
 from file_loader.error import FileLoadError
 
@@ -45,6 +46,9 @@ class FileLoaderService:
     # Cache structure: {md5: {loading_method: docs}}
     _docs_cache: Dict[str, Dict[str, List]] = {}
     _file_cache: Dict[str, FileInfo] = {}
+
+    def __init__(self):
+        self.db_service = DatabaseService()
 
     async def upload_file(self, file: UploadFile, loading_method: str) -> FileInfo:
         filename = file.filename or "unnamed_file"
@@ -91,6 +95,12 @@ class FileLoaderService:
 
         # Get or load documents based on the md5 and loading_method
         docs = self._get_or_load_docs(file_id, file_ext, loading_method, storage_path)
+
+        # Save documents to database
+        document_ids = self.db_service.save_documents(file_id, docs, filename)
+        logger.info(
+            f"Saved {len(document_ids)} documents to database for file {file_id}"
+        )
 
         # Return file info
         file_info = FileInfo(
@@ -215,22 +225,82 @@ class FileLoaderService:
         Returns:
             Tuple of (list of file info, total count)
         """
-        # In a real implementation, this would query a database
-        # For now, we'll read from the filesystem
+        # Query database for file information
+        documents_by_file = {}
+        all_documents = self.db_service.get_all_documents()
+
+        # Group documents by file_id
+        for doc in all_documents:
+            if doc.file_id not in documents_by_file:
+                documents_by_file[doc.file_id] = []
+            documents_by_file[doc.file_id].append(doc)
+
         files = []
 
-        for _, file in self._file_cache.items():
-            files.append(file)
+        # For each file_id found in database, try to reconstruct FileInfo
+        for file_id, docs in documents_by_file.items():
+            # Check if file exists in cache first
+            if file_id in self._file_cache:
+                files.append(self._file_cache[file_id])
+                continue
+
+            # Try to reconstruct from filesystem and database
+            file_path = None
+            for file_ext in constants.ALLOWED_FILE_TYPES:
+                potential_path = constants.ORIGINAL_FILES_DIR / f"{file_id}.{file_ext}"
+                if potential_path.exists():
+                    file_path = potential_path
+                    break
+
+            if file_path and docs:
+                # Extract metadata from first document
+                first_doc = docs[0]
+                # Try to get original filename from metadata first, then fallback to file path
+                file_name = None
+                if (
+                    first_doc.doc_metadata
+                    and "original_filename" in first_doc.doc_metadata
+                ):
+                    file_name = first_doc.doc_metadata["original_filename"]
+                else:
+                    # Fallback: try to extract from source path or use file path name
+                    file_name = (
+                        first_doc.doc_metadata.get("source", file_path.name)
+                        if first_doc.doc_metadata
+                        else file_path.name
+                    )
+                    if isinstance(file_name, str):
+                        file_name = Path(file_name).name
+
+                # Create FileInfo object
+                file_info = FileInfo(
+                    file_id=file_id,
+                    file_name=file_name if file_name else file_path.name,
+                    file_size=file_path.stat().st_size if file_path.exists() else 0,
+                    storage_path=str(file_path),
+                    created_at=datetime.fromtimestamp(file_path.stat().st_ctime)
+                    if file_path.exists()
+                    else datetime.utcnow(),
+                    loadingMethod=file_id.split("_")[0]
+                    if "_" in file_id
+                    else "Unknown",
+                    docs=[doc.to_langchain_document() for doc in docs],
+                )
+
+                # Update cache
+                self._file_cache[file_id] = file_info
+                files.append(file_info)
 
         # Sort by creation date (newest first)
         files.sort(key=lambda x: x.created_at, reverse=True)
 
         # Apply pagination
+        total_files = len(files)
         start_idx = (page - 1) * limit
         end_idx = start_idx + limit
         paginated_files = files[start_idx:end_idx]
 
-        return paginated_files, len(files)
+        return paginated_files, total_files
 
     async def get_file(self, file_id: str) -> Optional[FileDetailInfo]:
         """
@@ -278,10 +348,9 @@ class FileLoaderService:
 
                     break
 
-            # In a real implementation, we would also delete:
-            # - Associated chunks
-            # - Associated vectors
-            # - Associated index entries
+            # Delete from database (documents and chunks)
+            self.db_service.delete_file_data(file_id)
+            logger.info(f"Deleted database data for file {file_id}")
 
             if file_id in self._file_cache:
                 del self._file_cache[file_id]

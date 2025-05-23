@@ -18,6 +18,9 @@ from api.pipeline import router as pipeline_router
 from api.system import router as system_router
 from constants import API_PREFIX
 
+# Import database setup
+from database import create_tables
+
 # Load environment variables
 load_dotenv()
 
@@ -74,7 +77,7 @@ app.include_router(generation_router, prefix=API_PREFIX)
 app.include_router(pipeline_router, prefix=API_PREFIX)
 app.include_router(system_router, prefix=API_PREFIX)
 
-# Create necessary directories on startup
+# Create necessary directories and initialize database on startup
 @app.on_event("startup")
 async def startup_event():
     data_dir = Path("data")
@@ -88,6 +91,14 @@ async def startup_event():
     for dir_path in dirs:
         dir_path.mkdir(parents=True, exist_ok=True)
     logger.info("Data directories created")
+
+    # Initialize database tables
+    try:
+        create_tables()
+        logger.info("Database tables initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        raise
 
 
 if __name__ == "__main__":

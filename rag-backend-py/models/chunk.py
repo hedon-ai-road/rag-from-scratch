@@ -33,8 +33,12 @@ class ChunkInfo(BaseModel):
     chunk_id: str = Field(..., description="Unique chunk ID")
     file_id: str = Field(..., description="ID of the file this chunk belongs to")
     content: str = Field(..., description="Text content of the chunk")
-    start_offset: int = Field(..., description="Start offset in the original document")
-    end_offset: int = Field(..., description="End offset in the original document")
+    start_offset: Optional[int] = Field(
+        None, description="Start offset in the original document"
+    )
+    end_offset: Optional[int] = Field(
+        None, description="End offset in the original document"
+    )
 
 
 class ChunkCreateRequest(BaseModel):

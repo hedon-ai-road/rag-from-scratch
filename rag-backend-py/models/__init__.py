@@ -18,6 +18,10 @@ from models.chunk import (
     ChunkSettings,
     ChunkStrategy,
 )
+from models.document import (
+    Document,
+    DocumentChunk,
+)
 from models.embedding import (
     EmbeddingModel,
     EmbeddingModelListResponse,
@@ -96,6 +100,8 @@ __all__ = [
     "ChunkListResponse",
     "ChunkSettings",
     "ChunkStrategy",
+    "Document",
+    "DocumentChunk",
     "EmbeddingModel",
     "EmbeddingModelListResponse",
     "VectorCreate",
