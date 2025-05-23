@@ -92,133 +92,59 @@
           <!-- Error state -->
           <div v-else-if="documentPreviewError" class="error-message">
             <p>{{ documentPreviewError }}</p>
+            <div class="action-buttons">
+              <button class="primary-button" @click="refreshDocumentPreview">
+                Refresh Preview
+              </button>
+            </div>
           </div>
 
-          <!-- Document preview -->
+          <!-- Document preview with paginated JSON viewer -->
           <div v-else-if="selectedDocumentForPreview" class="document-content">
-            <!-- Document metadata -->
-            <div class="document-metadata">
+            <!-- Document basic info -->
+            <div class="document-metadata-header">
               <h4>{{ selectedDocumentForPreview.filename }}</h4>
-              <div class="metadata-grid">
-                <div class="metadata-item">
-                  <span class="label">File ID:</span>
-                  <span :title="selectedDocumentForPreview.file_id">{{ selectedDocumentForPreview.file_id.substring(0, 8) }}...</span>
-                </div>
-                <div class="metadata-item">
-                  <span class="label">Size:</span>
-                  <span>{{ formatFileSize(selectedDocumentForPreview.size_bytes) }}</span>
-                </div>
-                <div class="metadata-item">
-                  <span class="label">Uploaded:</span>
-                  <span>{{ formatDate(selectedDocumentForPreview.created_at) }}</span>
-                </div>
-                <div class="metadata-item">
-                  <span class="label">Storage Path:</span>
-                  <span>{{ selectedDocumentForPreview.storage_path }}</span>
-                </div>
-                <div class="metadata-item">
-                  <span class="label">Loading Method:</span>
-                  <span>{{ selectedDocumentForPreview.loading_method }}</span>
-                </div>
-                <div class="metadata-item">
-                  <span class="label">Pages:</span>
-                  <span>{{ selectedDocumentForPreview.page_content ? selectedDocumentForPreview.page_content.length : 0 }}</span>
-                </div>
-                <!-- Additional PDF metadata fields -->
-                <div class="metadata-item" v-if="selectedDocumentForPreview.page_content?.[0]?.metadata?.total_pages">
-                  <span class="label">Total Pages:</span>
-                  <span>{{ selectedDocumentForPreview.page_content[0].metadata.total_pages }}</span>
-                </div>
-                <div class="metadata-item" v-if="selectedDocumentForPreview.page_content?.[0]?.metadata?.author">
-                  <span class="label">Author:</span>
-                  <span>{{ selectedDocumentForPreview.page_content[0].metadata.author }}</span>
-                </div>
-                <div class="metadata-item" v-if="selectedDocumentForPreview.page_content?.[0]?.metadata?.creator">
-                  <span class="label">Creator:</span>
-                  <span>{{ selectedDocumentForPreview.page_content[0].metadata.creator }}</span>
-                </div>
+              <div class="metadata-summary">
+                <span class="metadata-tag">File ID: {{ selectedDocumentForPreview.file_id.substring(0, 8) }}...</span>
+                <span class="metadata-tag">Size: {{ formatFileSize(selectedDocumentForPreview.size_bytes) }}</span>
+                <span class="metadata-tag">Method: {{ selectedDocumentForPreview.loading_method }}</span>
+                <span class="metadata-tag">Pages: {{ selectedDocumentForPreview.page_content ? selectedDocumentForPreview.page_content.length : 0 }}</span>
               </div>
             </div>
 
-            <!-- No content message -->
-            <div v-if="!selectedDocumentForPreview.page_content || selectedDocumentForPreview.page_content.length === 0" class="no-content">
-              <p>No document content available</p>
-              <p class="suggestion-text">This file was loaded but no text content was extracted. Try reloading with a different loading method.</p>
-              <div class="action-buttons">
-                <button class="primary-button" @click="reloadWithPyPDF">
-                  Reload with PyPDF
-                </button>
-                <button class="secondary-button" @click="refreshDocumentPreview">
-                  Refresh Preview
-                </button>
-                <button class="secondary-button" @click="forceDisplayContent">
-                  Debug: Force Display Content
-                </button>
-              </div>
-            </div>
-
-            <!-- Document content with pagination -->
-            <div v-else class="document-content">
-              <!-- Pagination controls -->
-              <div v-if="totalPages > 1" class="pagination-controls">
-                <button
-                  class="pagination-button"
-                  @click="goToFirstPage"
-                  :disabled="currentPage === 1"
-                  title="First Page">
-                  <span>&#171;</span>
-                </button>
-                <button
-                  class="pagination-button"
-                  @click="goToPreviousPage"
-                  :disabled="currentPage === 1"
-                  title="Previous Page">
-                  <span>&#8249;</span>
-                </button>
-                <span class="pagination-info">Page {{ currentPage }} of {{ totalPages }}</span>
-                <button
-                  class="pagination-button"
-                  @click="goToNextPage"
-                  :disabled="currentPage === totalPages"
-                  title="Next Page">
-                  <span>&#8250;</span>
-                </button>
-                <button
-                  class="pagination-button"
-                  @click="goToLastPage"
-                  :disabled="currentPage === totalPages"
-                  title="Last Page">
-                  <span>&#187;</span>
-                </button>
+            <!-- Page Content Viewer with Pagination -->
+            <div class="page-content-viewer">
+              <div class="page-header">
+                <h5>Page {{ currentPageIndex + 1 }} of {{ totalPages }}</h5>
+                <div class="pagination-controls">
+                  <button
+                    @click="previousPage"
+                    :disabled="currentPageIndex === 0"
+                    class="pagination-btn"
+                  >
+                    Previous
+                  </button>
+                  <span class="page-info">{{ currentPageIndex + 1 }} / {{ totalPages }}</span>
+                  <button
+                    @click="nextPage"
+                    :disabled="currentPageIndex >= totalPages - 1"
+                    class="pagination-btn"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
 
-              <!-- Document pages as cards -->
-              <div class="document-pages-container">
-                <div v-for="(page, index) in paginatedDocumentContent"
-                     :key="index"
-                     class="document-page-card">
-                  <div class="page-card-header">
-                    <h3 class="page-title">Page {{ page.page_number }}</h3>
-                    <div class="page-info">
-                      <span v-if="page.metadata?.page_label">Label: {{ page.metadata.page_label }}</span>
-                      <span v-if="page.metadata?.page != null">Index: {{ page.metadata.page }}</span>
-                    </div>
-                  </div>
-
-                  <div class="page-card-content">
-                    <pre class="page-text">{{ page.text }}</pre>
-                  </div>
-
-                  <div class="page-card-footer">
-                    <details class="metadata-details">
-                      <summary>Page Metadata</summary>
-                      <div class="metadata-grid">
-                        <div class="metadata-item" v-for="(value, key) in page.metadata" :key="key">
-                          <span class="label">{{ key }}:</span>
-                          <span>{{ value }}</span>
-                        </div>
-                      </div>
-                    </details>
+              <!-- Current Page JSON Viewer -->
+              <div class="current-page-viewer">
+                <div class="json-wrapper">
+                  <SimpleJsonViewer
+                    v-if="currentPageData"
+                    :model-value="currentPageData"
+                    class="page-json-viewer"
+                  />
+                  <div v-else class="no-page-data">
+                    No page data available
                   </div>
                 </div>
               </div>
@@ -318,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRagDataStore } from '../stores/ragDataStore';
 
 const store = useRagDataStore();
@@ -328,14 +254,13 @@ const loadingMethod = ref('');
 const selectedFile = ref<File | null>(null);
 const activeTab = ref('management');
 const selectedDocumentForPreview = ref<any>(null);
-const documentPreviewContent = ref('');
 const documentPreviewLoading = ref(false);
 const documentPreviewError = ref('');
 const uploading = ref(false);
 const deleting = ref(false);
-const currentPage = ref(1);
-const pageSize = ref(3); // Display 3 pages at a time
-const totalPages = ref(0);
+
+// Pagination for page content
+const currentPageIndex = ref(0);
 
 // File type and loading method management
 const selectedFileType = ref<string>('');
@@ -357,12 +282,6 @@ const fileAcceptString = computed(() => {
 // Initialize data
 onMounted(async () => {
   await store.initialize();
-
-  // Setup keyboard navigation with cleanup
-  const cleanup = setupKeyboardNavigation();
-
-  // Clean up event listener on component unmount
-  onUnmounted(cleanup);
 });
 
 // Watch for supported file types to be loaded and set default loading method
@@ -388,6 +307,38 @@ const uploadStatusClass = computed(() => {
     return 'bg-blue-100 text-blue-700 rounded';
   }
 });
+
+// Computed properties for pagination
+const totalPages = computed(() => {
+  if (!selectedDocumentForPreview.value || !selectedDocumentForPreview.value.page_content) {
+    return 0;
+  }
+  return selectedDocumentForPreview.value.page_content.length;
+});
+
+const currentPageData = computed(() => {
+  if (!selectedDocumentForPreview.value || !selectedDocumentForPreview.value.page_content) {
+    return null;
+  }
+  const pages = selectedDocumentForPreview.value.page_content;
+  if (currentPageIndex.value >= 0 && currentPageIndex.value < pages.length) {
+    return pages[currentPageIndex.value];
+  }
+  return null;
+});
+
+// Pagination methods
+const nextPage = () => {
+  if (currentPageIndex.value < totalPages.value - 1) {
+    currentPageIndex.value++;
+  }
+};
+
+const previousPage = () => {
+  if (currentPageIndex.value > 0) {
+    currentPageIndex.value--;
+  }
+};
 
 // Open the file selector
 const openFileSelector = () => {
@@ -509,8 +460,6 @@ const formatDate = (dateString: string) => {
 const previewDocument = async (file: any) => {
   documentPreviewLoading.value = true;
   documentPreviewError.value = '';
-  currentPage.value = 1;
-  totalPages.value = 0;
 
   try {
     // Fetch detailed file information with document content
@@ -557,11 +506,8 @@ const previewDocument = async (file: any) => {
 
       console.log('Document preview data mapped:', selectedDocumentForPreview.value);
 
-      // Calculate total pages for pagination
-      if (selectedDocumentForPreview.value.page_content) {
-        totalPages.value = Math.ceil(selectedDocumentForPreview.value.page_content.length / pageSize.value);
-        console.log(`Pagination: ${selectedDocumentForPreview.value.page_content.length} items with page size ${pageSize.value} = ${totalPages.value} pages`);
-      }
+      // Reset pagination to first page
+      currentPageIndex.value = 0;
 
       // Switch to preview tab
       activeTab.value = 'preview';
@@ -591,7 +537,6 @@ const deleteDocument = async (file: any) => {
         // Clear preview if the deleted document was being previewed
         if (selectedDocumentForPreview.value && selectedDocumentForPreview.value.file_id === file.file_id) {
           selectedDocumentForPreview.value = null;
-          documentPreviewContent.value = '';
         }
       } else {
         uploadStatus.value = `Error: Failed to delete file. ${store.error.files || ''}`;
@@ -601,83 +546,6 @@ const deleteDocument = async (file: any) => {
     } finally {
       deleting.value = false;
     }
-  }
-};
-
-// Add keyboard navigation for pagination
-const setupKeyboardNavigation = () => {
-  const handleKeyDown = (e: KeyboardEvent) => {
-    // Only apply keyboard navigation when on preview tab and document is loaded
-    if (activeTab.value !== 'preview' || !selectedDocumentForPreview.value?.page_content) return;
-
-    switch (e.key) {
-      case 'ArrowLeft':
-        if (currentPage.value > 1) {
-          currentPage.value--;
-        }
-        break;
-      case 'ArrowRight':
-        if (currentPage.value < totalPages.value) {
-          currentPage.value++;
-        }
-        break;
-      case 'Home':
-        currentPage.value = 1;
-        break;
-      case 'End':
-        currentPage.value = totalPages.value;
-        break;
-    }
-  };
-
-  // Add event listener when component is mounted
-  window.addEventListener('keydown', handleKeyDown);
-
-  // Return cleanup function
-  return () => {
-    window.removeEventListener('keydown', handleKeyDown);
-  };
-};
-
-// Add watch for activeTab to scroll to top of document content when changing pages
-watch(currentPage, () => {
-  // Scroll to top of document content when changing pages
-  setTimeout(() => {
-    const contentElement = document.querySelector('.content-text');
-    if (contentElement) {
-      contentElement.scrollTop = 0;
-    }
-  }, 0);
-});
-
-// Reload the document with PyPDF method
-const reloadWithPyPDF = async () => {
-  if (!selectedDocumentForPreview.value || !selectedDocumentForPreview.value.file_id) {
-    documentPreviewError.value = 'No document selected';
-    return;
-  }
-
-  documentPreviewLoading.value = true;
-  try {
-    // Create a dummy file object with the same ID
-    const dummyFile = {
-      file_id: selectedDocumentForPreview.value.file_id,
-      loadingMethod: 'PyPDF'
-    };
-
-    // Call preview with the PyPDF method
-    await previewDocument(dummyFile);
-
-    // If still no content, show error
-    if (!selectedDocumentForPreview.value.page_content ||
-        selectedDocumentForPreview.value.page_content.length === 0) {
-      documentPreviewError.value = 'Failed to load content with PyPDF method';
-    }
-  } catch (error: any) {
-    documentPreviewError.value = error.message || 'Failed to reload document';
-    console.error('Error reloading document:', error);
-  } finally {
-    documentPreviewLoading.value = false;
   }
 };
 
@@ -706,79 +574,10 @@ const refreshDocumentPreview = async () => {
   }
 };
 
-// Debug: Force display document content
-const forceDisplayContent = () => {
-  if (!selectedDocumentForPreview.value) return;
-
-  // Get the file ID
-  const fileId = selectedDocumentForPreview.value.file_id;
-  console.log('Forcing display content for file:', fileId);
-
-  // Create sample document content based on backend logs
-  const sampleContent = [];
-  for (let i = 0; i < 8; i++) {
-    sampleContent.push({
-      page_number: i + 1,
-      text: `This is sample text for page ${i+1}. The real content from the PDF is available but not displaying correctly.`,
-      metadata: {
-        page: i,
-        page_label: String(i + 1),
-        total_pages: 8
-      }
-    });
-  }
-
-  // Force update the selectedDocumentForPreview
-  selectedDocumentForPreview.value = {
-    ...selectedDocumentForPreview.value,
-    page_content: sampleContent
-  };
-
-  // Update pagination
-  currentPage.value = 1;
-  totalPages.value = Math.ceil(sampleContent.length / pageSize.value);
-
-  console.log('Forced content update:', selectedDocumentForPreview.value);
-  console.log(`Pagination setup: ${sampleContent.length} items, ${pageSize.value} per page = ${totalPages.value} total pages`);
-};
-
-// Get current page items based on pagination
-const paginatedDocumentContent = computed(() => {
-  if (!selectedDocumentForPreview.value?.page_content) return [];
-
-  const startIndex = (currentPage.value - 1) * pageSize.value;
-  const endIndex = startIndex + pageSize.value;
-
-  return selectedDocumentForPreview.value.page_content.slice(startIndex, endIndex);
-});
-
-// Pagination navigation methods
-const goToFirstPage = () => {
-  currentPage.value = 1;
-};
-
-const goToPreviousPage = () => {
-  if (currentPage.value > 1) {
-    currentPage.value--;
-  }
-};
-
-const goToNextPage = () => {
-  if (currentPage.value < totalPages.value) {
-    currentPage.value++;
-  }
-};
-
-const goToLastPage = () => {
-  currentPage.value = totalPages.value;
-};
-
 // Reset pagination when clearing selected document
 const clearSelectedDocument = () => {
   selectedDocumentForPreview.value = null;
   documentPreviewError.value = '';
-  currentPage.value = 1;
-  totalPages.value = 0;
   activeTab.value = 'management';
 };
 </script>
@@ -851,45 +650,151 @@ const clearSelectedDocument = () => {
   margin: 1rem 0;
 }
 
-.document-content-container {
+.document-content {
   display: flex;
   flex-direction: column;
   flex: 1;
   overflow: hidden;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
-  background-color: white;
 }
 
-.document-metadata {
-  background-color: #f9fafb;
+.document-metadata-header {
+  background-color: #f8fafc;
   padding: 1rem;
-  border-bottom: 1px solid #e5e7eb;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
 }
 
-.document-metadata h4 {
+.document-metadata-header h4 {
   font-size: 1.125rem;
   font-weight: 600;
-  margin-top: 0;
-  margin-bottom: 0.5rem;
+  margin: 0 0 0.75rem 0;
+  color: #1e293b;
 }
 
-.metadata-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 0.75rem;
+.metadata-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
-.metadata-item {
-  font-size: 0.875rem;
+.metadata-tag {
+  background-color: #e2e8f0;
+  color: #475569;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
-.metadata-item .label {
+.page-content-viewer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  background-color: white;
+  min-height: 400px;
+  max-height: 60vh;
+  overflow: hidden;
+}
+
+.page-header {
+  background-color: #f8fafc;
+  color: #374151;
+  padding: 0.75rem 1rem;
+  margin: 0;
+  font-size: 1rem;
   font-weight: 600;
-  margin-right: 0.25rem;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
 }
 
-.no-content, .no-document-selected {
+.pagination-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+}
+
+.pagination-btn {
+  background-color: #f3f4f6;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  border: 1px solid #d1d5db;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pagination-btn:hover {
+  background-color: #e5e7eb;
+}
+
+.page-info {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.current-page-viewer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.json-wrapper {
+  flex: 1;
+  overflow: auto;
+  background-color: #ffffff;
+  width: 100%;
+  max-width: 100%;
+  padding: 1rem;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  box-sizing: border-box;
+  word-wrap: break-word;
+  contain: layout style;
+}
+
+/* Ensure all nested content respects boundaries */
+.json-wrapper :deep(*) {
+  max-width: 100% !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  box-sizing: border-box !important;
+}
+
+/* Style the page json viewer for better readability */
+.json-wrapper :deep(pre) {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+.json-wrapper :deep(code) {
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  max-width: 100% !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+.no-page-data {
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -902,147 +807,9 @@ const clearSelectedDocument = () => {
   text-align: center;
 }
 
-.suggestion-text {
-  margin-top: 0.5rem;
-  font-size: 0.875rem;
-  color: #9ca3af;
-}
-
-.document-content {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  overflow: hidden;
-}
-
-/* Document page cards */
-.document-pages-container {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  padding: 1rem;
-  max-height: 70vh;
-  overflow-y: auto;
-}
-
-.document-page-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.5rem;
-  overflow: hidden;
-  background-color: white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.document-page-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-.page-card-header {
-  padding: 1rem;
-  background-color: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.page-title {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 0;
-  color: #1f2937;
-}
-
-.page-info {
-  display: flex;
-  gap: 1rem;
-  font-size: 0.75rem;
-  color: #6b7280;
-}
-
-.page-card-content {
-  padding: 1rem;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.page-text {
-  margin: 0;
-  white-space: pre-wrap;
-  font-size: 0.9rem;
-  line-height: 1.5;
-  color: #1f2937;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.page-card-footer {
-  padding: 0.75rem 1rem;
-  background-color: #f9fafb;
-}
-
-.metadata-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-
-.metadata-item {
-  font-size: 0.75rem;
-  display: flex;
-  flex-direction: column;
-}
-
-.metadata-item .label {
-  font-weight: 600;
-  color: #4b5563;
-}
-
-/* Add keyboard hint style */
-.keyboard-hint {
-  font-size: 0.75rem;
-  color: #6b7280;
-  margin-left: 0.5rem;
-  font-style: italic;
-}
-
-/* Add focus styling to make active elements more visible */
-.pagination-button:focus {
-  outline: none;
-  ring: 2px;
-  ring-color: #3b82f6;
-  ring-offset: 2px;
-}
-
-.metadata-details {
-  margin-top: 1rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  overflow: hidden;
-}
-
-.metadata-details summary {
-  padding: 0.5rem 1rem;
-  background-color: #f3f4f6;
-  cursor: pointer;
-  font-weight: 500;
-  font-size: 0.875rem;
-}
-
-.metadata-details summary:hover {
-  background-color: #e5e7eb;
-}
-
-.metadata-json {
-  max-height: 200px;
-  overflow-y: auto;
-  padding: 0.75rem;
-  margin: 0;
-  background-color: #f9fafb;
-  font-size: 0.75rem;
-  white-space: pre-wrap;
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .action-buttons {
@@ -1067,59 +834,10 @@ const clearSelectedDocument = () => {
   background-color: #2563eb;
 }
 
-.secondary-button {
-  background-color: #f3f4f6;
-  color: #374151;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  border: 1px solid #d1d5db;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.secondary-button:hover {
-  background-color: #e5e7eb;
-}
-
-/* Pagination Controls */
-.pagination-controls {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 0.75rem;
-  background-color: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
-  gap: 0.5rem;
-}
-
-.pagination-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.375rem;
-  border: 1px solid #d1d5db;
-  background-color: white;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.pagination-button:hover:not(:disabled) {
-  background-color: #f3f4f6;
-  border-color: #9ca3af;
-}
-
-.pagination-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.pagination-info {
-  margin: 0 0.75rem;
-  font-size: 0.875rem;
-  color: #4b5563;
+.page-json-viewer {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  display: block;
 }
 </style>

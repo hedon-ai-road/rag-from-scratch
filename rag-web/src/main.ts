@@ -17,11 +17,16 @@ api.interceptors.response.use(
   }
 );
 
-// Create pinia store
-const pinia = createPinia();
+// Import SimpleJsonViewer
+import { SimpleJsonViewer } from 'vue-sjv'
 
 // Create and mount app
-const app = createApp(App);
-app.use(pinia);
-app.use(router);
-app.mount('#app');
+const app = createApp(App)
+
+// Register SimpleJsonViewer globally
+app.component('SimpleJsonViewer', SimpleJsonViewer)
+
+app.use(createPinia())
+app.use(router)
+
+app.mount('#app')
