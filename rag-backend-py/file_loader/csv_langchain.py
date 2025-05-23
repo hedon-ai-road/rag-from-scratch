@@ -7,7 +7,6 @@ def load(path):
         csv_args={
             "delimiter": ",",
             "quotechar": '"',
-            "fieldnames": ["种类", "名称", "描述"],
         },
     )
     docs = loader.load()

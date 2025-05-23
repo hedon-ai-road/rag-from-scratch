@@ -39,7 +39,7 @@ async def upload_file(
         file_info = await file_service.upload_file(file, loading_method)
         return {"code": 0, "message": "Success", "data": {"file": file_info}}
     except Exception as e:
-        logger.error(f"Error uploading file: {str(e)}")
+        logger.error(f"Error uploading file: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

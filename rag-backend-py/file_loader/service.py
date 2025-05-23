@@ -8,14 +8,30 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict
+from langchain_core.documents import Document
 
 from fastapi import UploadFile
 
 import constants
 from models.file import FileDetailInfo, FileInfo
 
-from file_loader.pdf_pypdf import load as PDFPyPDFLoader
 from file_loader.error import FileLoadError
+
+from file_loader.pdf_pypdf import load as PDFPyPDFLoader
+from file_loader.pdf_unstructured import load as PDFUnstructuredLoader
+from file_loader.pdf_table_camelot import load as PDFCamelotLoader
+from file_loader.pdf_table_pdfplumber import load as PDFPlumberLoader
+
+from file_loader.csv_langchain import load as CSVLangchainLoader
+from file_loader.csv_unstructured import load as CSVUnstructuredLoader
+
+from file_loader.txt_langchain_textloader import load as TxtLangchainLoader
+
+from file_loader.img_langchain_unstructured import load as ImgUnstructuredLoader
+
+from file_loader.ppt_unstructured import load as PPTUnstructuredLoader
+
+from file_loader.md_langchain_unstructured import load as MDUnstructuredLoader
 
 
 logger = logging.getLogger("rag-backend.file_loader")
@@ -31,17 +47,6 @@ class FileLoaderService:
     _file_cache: Dict[str, FileInfo] = {}
 
     async def upload_file(self, file: UploadFile, loading_method: str) -> FileInfo:
-        """
-        Upload a file to the RAG system.
-
-        Args:
-            file: The uploaded file
-            loading_method: Method to use for loading the file content
-
-        Returns:
-            FileInfo: Information about the uploaded file
-        """
-        # Get the file metadata
         filename = file.filename or "unnamed_file"
         file_ext = Path(filename).suffix.lstrip(".").lower()
 
@@ -100,7 +105,6 @@ class FileLoaderService:
 
         # Cache file info
         self._file_cache[file_info.file_id] = file_info
-
         return file_info
 
     def _get_or_load_docs(
@@ -135,41 +139,67 @@ class FileLoaderService:
         return docs
 
     def load_file(self, file_ext: str, loading_method: str, path: Path):
-        """
-        Load a file using the specified method
-
-        Args:
-            file_ext: File Extension(.pdf, .csv)
-            loading_method: Loading method
-            path: File path
-
-        Returns:
-            List of documents
-        """
         logger.info(f"Loading file: {path} with method: {loading_method}")
 
+        docs = []
         if file_ext == "pdf":
-            return self.load_pdf(loading_method, path)
+            docs = self.load_pdf(loading_method, path)
         elif file_ext == "csv":
-            return self.load_csv(loading_method, path)
+            docs = self.load_csv(loading_method, path)
+        elif file_ext in ["jpg", "jpeg", "png"]:
+            docs = self.load_img(loading_method, path)
+        elif file_ext == "txt":
+            docs = self.load_txt(loading_method, path)
+        elif file_ext in ["ppt", "pptx"]:
+            docs = self.load_ppt(loading_method, path)
+        elif file_ext in ["md", "markdown"]:
+            docs = self.load_md(loading_method, path)
         else:
             raise FileLoadError(f"unsupported file extension: {file_ext}")
+        if docs and len(docs) > 0 and str(docs[0]):
+            logger.info(f"First document sample: {str(docs[0])}...")
+        return docs
 
-    def load_pdf(self, loading_method: str, path: Path):
+    def load_pdf(self, loading_method: str, path: Path) -> List[Document]:
         if loading_method == "PyPDF":
-            logger.info(f"Using PyPDF loader for {path}")
-            docs = PDFPyPDFLoader(path=path)
-            logger.info(
-                f"PyPDF loaded {len(docs) if docs else 0} documents from {path}"
-            )
-            # Log the first document if available
-            if docs and len(docs) > 0:
-                logger.info(f"First document sample: {str(docs[0])[:100]}...")
-            return docs
-        else:
-            raise FileLoadError(f"unsupported loading method for pdf: {loading_method}")
+            return PDFPyPDFLoader(path)
+        elif loading_method == "Unstructured":
+            return PDFUnstructuredLoader(path)
+        raise FileLoadError(f"unsupported loading method for pdf: {loading_method}")
 
     def load_csv(self, loading_method: str, path: Path):
+        if loading_method == "Langchian":
+            return CSVLangchainLoader(path)
+        elif loading_method == "Unstructured":
+            return CSVUnstructuredLoader(path)
+        raise FileLoadError(
+            f"unsupported file loading method for svc: {loading_method}"
+        )
+
+    def load_img(self, loading_method: str, path: Path):
+        if loading_method == "Unstructured":
+            return ImgUnstructuredLoader(path)
+        raise FileLoadError(
+            f"unsupported file loading method for svc: {loading_method}"
+        )
+
+    def load_txt(self, loading_method: str, path: Path):
+        if loading_method == "TextLoader":
+            return TxtLangchainLoader(path)
+        raise FileLoadError(
+            f"unsupported file loading method for svc: {loading_method}"
+        )
+
+    def load_ppt(self, loading_method: str, path: Path):
+        if loading_method == "Unstructured":
+            return PPTUnstructuredLoader(path)
+        raise FileLoadError(
+            f"unsupported file loading method for svc: {loading_method}"
+        )
+
+    def load_md(self, loading_method: str, path: Path):
+        if loading_method == "Unstructured":
+            return MDUnstructuredLoader(path)
         raise FileLoadError(
             f"unsupported file loading method for svc: {loading_method}"
         )

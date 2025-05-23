@@ -16,11 +16,21 @@ LOGS_DIR = DATA_DIR / "logs"
 
 # File loading settings
 MAX_FILE_SIZE = 128 * 1024 * 1024  # 128MB
-ALLOWED_FILE_TYPES = ["pdf", "txt", "csv", "png", "jpg", "jpeg", "ppt", "pptx", "md"]
+ALLOWED_FILE_TYPES = [
+    "pdf",
+    "txt",
+    "csv",
+    "png",
+    "jpg",
+    "jpeg",
+    "ppt",
+    "pptx",
+    "md",
+    "markdown",
+]
 LOADING_METHODS = {
-    "pdf": ["PyPDF", "Camelot", "Llamaparse", "Unstructured", "Pdfplumber"],
+    "pdf": ["PyPDF", "Unstructured"],
     "csv": ["Langchain", "Unstructured"],
-    "json": ["JsonLoader"],
     "txt": ["TextLoader"],
     "png": ["Unstructured"],
     "jpg": ["Unstructured"],
@@ -28,6 +38,7 @@ LOADING_METHODS = {
     "ppt": ["Unstructured"],
     "pptx": ["Unstructured"],
     "md": ["Unstructured"],
+    "markdown": ["Unstructured"],
 }
 
 # Chunking settings
