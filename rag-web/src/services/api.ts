@@ -21,7 +21,7 @@ export const fileService = {
   async uploadFile(file: File, loadingMethod: string) {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('loadingMethod', loadingMethod);
+    formData.append('loading_method', loadingMethod);
 
     try {
       const response = await api.post('/files', formData, {
@@ -82,6 +82,37 @@ export const fileService = {
     } catch (error: unknown) {
       const err = error as AxiosError;
       console.error(`Error deleting file ${fileId}:`, err);
+      throw err;
+    }
+  },
+
+  /**
+   * Get all supported file types and their loading methods
+   * @returns Supported file types and loading methods
+   */
+  async getSupportedFileTypes() {
+    try {
+      const response = await api.get('/files/supported-types');
+      return response.data;
+    } catch (error: unknown) {
+      const err = error as AxiosError;
+      console.error('Error getting supported file types:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * Get available loading methods for a specific file type
+   * @param fileType File type (e.g., 'pdf', 'txt')
+   * @returns Available loading methods for the file type
+   */
+  async getLoadingMethodsForFileType(fileType: string) {
+    try {
+      const response = await api.get(`/files/loading-methods/${fileType}`);
+      return response.data;
+    } catch (error: unknown) {
+      const err = error as AxiosError;
+      console.error(`Error getting loading methods for file type ${fileType}:`, err);
       throw err;
     }
   },

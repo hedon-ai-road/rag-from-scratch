@@ -30,27 +30,13 @@ file_service = FileLoaderService()
 @router.post("", response_model=BaseResponse)
 async def upload_file(
     file: UploadFile = File(...),
-    loadingMethod: Optional[str] = Form(None),
+    loading_method: str = Form(...),
 ):
     """
     Upload a document file to the RAG system.
     """
     try:
-        # Validate file
-        if loadingMethod and loadingMethod not in constants.LOADING_METHODS:
-            valid_methods = ", ".join(constants.LOADING_METHODS)
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "code": 1,
-                    "message": f"Invalid loading method. Valid options: {valid_methods}",
-                    "data": None,
-                },
-            )
-
-        # Process file upload
-        file_info = await file_service.upload_file(file, loadingMethod)
-
+        file_info = await file_service.upload_file(file, loading_method)
         return {"code": 0, "message": "Success", "data": {"file": file_info}}
     except Exception as e:
         logger.error(f"Error uploading file: {str(e)}")
@@ -83,6 +69,71 @@ async def get_all_files(
         }
     except Exception as e:
         logger.error(f"Error getting files: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/supported-types", response_model=BaseResponse)
+async def get_supported_file_types():
+    """
+    Get all supported file types and their available loading methods.
+    """
+    try:
+        # Return supported file types and their loading methods
+        supported_types = {}
+        for file_type in constants.ALLOWED_FILE_TYPES:
+            if file_type in constants.LOADING_METHODS:
+                supported_types[file_type] = constants.LOADING_METHODS[file_type]
+            else:
+                # Fallback to Unstructured if not explicitly defined
+                supported_types[file_type] = ["Unstructured"]
+
+        return {
+            "code": 0,
+            "message": "Success",
+            "data": {
+                "supported_types": supported_types,
+                "allowed_file_types": constants.ALLOWED_FILE_TYPES,
+            },
+        }
+    except Exception as e:
+        logger.error(f"Error getting supported file types: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/loading-methods/{file_type}", response_model=BaseResponse)
+async def get_loading_methods_for_file_type(file_type: str):
+    """
+    Get available loading methods for a specific file type.
+    """
+    try:
+        # Check if file type is supported
+        if file_type.lower() not in constants.ALLOWED_FILE_TYPES:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "code": 1,
+                    "message": f"File type '{file_type}' is not supported",
+                    "data": {"supported_types": constants.ALLOWED_FILE_TYPES},
+                },
+            )
+
+        # Get loading methods for the file type
+        loading_methods = constants.LOADING_METHODS.get(
+            file_type.lower(), ["Unstructured"]
+        )
+
+        return {
+            "code": 0,
+            "message": "Success",
+            "data": {
+                "file_type": file_type.lower(),
+                "loading_methods": loading_methods,
+            },
+        }
+    except Exception as e:
+        logger.error(
+            f"Error getting loading methods for file type {file_type}: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 

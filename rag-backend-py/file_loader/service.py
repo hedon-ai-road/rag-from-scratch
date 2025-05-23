@@ -30,9 +30,7 @@ class FileLoaderService:
     _docs_cache: Dict[str, Dict[str, List]] = {}
     _file_cache: Dict[str, FileInfo] = {}
 
-    async def upload_file(
-        self, file: UploadFile, loading_method: Optional[str] = None
-    ) -> FileInfo:
+    async def upload_file(self, file: UploadFile, loading_method: str) -> FileInfo:
         """
         Upload a file to the RAG system.
 
@@ -43,9 +41,6 @@ class FileLoaderService:
         Returns:
             FileInfo: Information about the uploaded file
         """
-        # Use default loading method if not provided
-        loading_method = loading_method or constants.LOADING_METHODS[0]
-
         # Get the file metadata
         filename = file.filename or "unnamed_file"
         file_ext = Path(filename).suffix.lstrip(".").lower()
@@ -54,6 +49,12 @@ class FileLoaderService:
         if file_ext not in constants.ALLOWED_FILE_TYPES:
             valid_types = ", ".join(constants.ALLOWED_FILE_TYPES)
             raise ValueError(f"Unsupported file type. Supported types: {valid_types}")
+
+        loading_methods = constants.LOADING_METHODS[file_ext]
+        if not loading_methods or loading_method not in loading_methods:
+            raise ValueError(
+                f"Unsupported loading methods for {file_ext}. Supported methods: {loading_methods}"
+            )
 
         # Read file content
         content = await file.read()

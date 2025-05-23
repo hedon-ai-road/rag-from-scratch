@@ -17,7 +17,7 @@
             @change="handleFileSelect"
             ref="fileInput"
             hidden
-            accept=".pdf,.txt,.md,.docx"
+            :accept="fileAcceptString"
           />
           <button
             @click="openFileSelector"
@@ -29,12 +29,14 @@
 
         <div class="mt-4">
           <label class="block text-sm font-medium text-gray-700 mb-2">Loading Method</label>
-          <select v-model="loadingMethod" class="input w-full">
-            <option value="PyMuPDF">PyMuPDF</option>
-            <option value="PyPDF">PyPDF</option>
-            <option value="Unstructured">Unstructured</option>
-            <option value="LangChain">LangChain</option>
+          <select v-model="loadingMethod" class="input w-full" :disabled="!selectedFile || availableLoadingMethods.length === 0">
+            <option v-for="method in availableLoadingMethods" :key="method" :value="method">
+              {{ method }}
+            </option>
           </select>
+          <p v-if="selectedFile && availableLoadingMethods.length === 0" class="text-sm text-gray-500 mt-1">
+            No loading methods available for this file type
+          </p>
         </div>
 
         <div v-if="uploadStatus" class="mt-4 p-3" :class="uploadStatusClass">
@@ -322,7 +324,7 @@ import { useRagDataStore } from '../stores/ragDataStore';
 const store = useRagDataStore();
 const fileInput = ref<HTMLInputElement | null>(null);
 const uploadStatus = ref('');
-const loadingMethod = ref('PyMuPDF');
+const loadingMethod = ref('');
 const selectedFile = ref<File | null>(null);
 const activeTab = ref('management');
 const selectedDocumentForPreview = ref<any>(null);
@@ -335,6 +337,23 @@ const currentPage = ref(1);
 const pageSize = ref(3); // Display 3 pages at a time
 const totalPages = ref(0);
 
+// File type and loading method management
+const selectedFileType = ref<string>('');
+const availableLoadingMethods = computed(() => {
+  if (!selectedFileType.value || !store.loadingMethods[selectedFileType.value]) {
+    return [];
+  }
+  return store.loadingMethods[selectedFileType.value];
+});
+
+// Computed property for file accept string
+const fileAcceptString = computed(() => {
+  if (store.supportedFileTypes.length === 0) {
+    return '.pdf,.txt,.md,.docx'; // fallback
+  }
+  return store.supportedFileTypes.map(type => `.${type}`).join(',');
+});
+
 // Initialize data
 onMounted(async () => {
   await store.initialize();
@@ -345,6 +364,20 @@ onMounted(async () => {
   // Clean up event listener on component unmount
   onUnmounted(cleanup);
 });
+
+// Watch for supported file types to be loaded and set default loading method
+watch(() => store.supportedFileTypes, (newTypes) => {
+  if (newTypes.length > 0 && !loadingMethod.value) {
+    // Set a default loading method from the most common file types
+    const commonTypes = ['pdf', 'txt', 'md'];
+    for (const type of commonTypes) {
+      if (store.loadingMethods[type] && store.loadingMethods[type].length > 0) {
+        loadingMethod.value = store.loadingMethods[type][0];
+        break;
+      }
+    }
+  }
+}, { immediate: true });
 
 const uploadStatusClass = computed(() => {
   if (uploadStatus.value.includes('Success')) {
@@ -372,9 +405,10 @@ const handleDrop = (e: DragEvent) => {
     const file = files[0];
     if (isValidFile(file)) {
       selectedFile.value = file;
+      updateFileTypeAndMethods(file);
       uploadStatus.value = `Selected file: ${file.name}`;
     } else {
-      uploadStatus.value = 'Error: Invalid file type. Supported types: PDF, TXT, MD, DOCX';
+      uploadStatus.value = `Error: Invalid file type. Supported types: ${store.supportedFileTypes.join(', ').toUpperCase()}`;
     }
   }
 };
@@ -386,16 +420,30 @@ const handleFileSelect = (e: Event) => {
     const file = target.files[0];
     if (isValidFile(file)) {
       selectedFile.value = file;
+      updateFileTypeAndMethods(file);
       uploadStatus.value = `Selected file: ${file.name}`;
     } else {
-      uploadStatus.value = 'Error: Invalid file type. Supported types: PDF, TXT, MD, DOCX';
+      uploadStatus.value = `Error: Invalid file type. Supported types: ${store.supportedFileTypes.join(', ').toUpperCase()}`;
     }
   }
 };
 
+// Update file type and available loading methods based on selected file
+const updateFileTypeAndMethods = (file: File) => {
+  const fileType = store.getFileExtension(file.name);
+  selectedFileType.value = fileType;
+
+  // Set default loading method to the first available method
+  if (availableLoadingMethods.value.length > 0) {
+    loadingMethod.value = availableLoadingMethods.value[0];
+  } else {
+    loadingMethod.value = 'Unstructured'; // fallback
+  }
+};
+
 const isValidFile = (file: File): boolean => {
-  const validExtensions = ['.pdf', '.txt', '.md', '.docx'];
-  return validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+  // Use store method to check if file type is supported
+  return store.isFileTypeSupported(file.name);
 };
 
 // Process the file

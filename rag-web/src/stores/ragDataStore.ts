@@ -71,6 +71,12 @@ export const useRagDataStore = defineStore('ragData', () => {
     generations: null
   });
 
+  // File type support state
+  const supportedFileTypes = ref<string[]>([]);
+  const loadingMethods = ref<{ [key: string]: string[] }>({});
+  const loadingSupportedTypes = ref(false);
+  const supportedTypesError = ref<string | null>(null);
+
   // Settings
   const chunkSettings = ref({
     window_size: 512,
@@ -256,7 +262,10 @@ export const useRagDataStore = defineStore('ragData', () => {
 
   // Initialize by fetching data
   const initialize = async () => {
-    await fetchFiles();
+    await Promise.all([
+      fetchFiles(),
+      fetchSupportedFileTypes()
+    ]);
   };
 
   // Create chunks for a file
@@ -375,6 +384,59 @@ export const useRagDataStore = defineStore('ragData', () => {
     return latestQueryResult;
   }
 
+  // Fetch supported file types and loading methods
+  const fetchSupportedFileTypes = async () => {
+    loadingSupportedTypes.value = true;
+    supportedTypesError.value = null;
+
+    try {
+      const response = await fileService.getSupportedFileTypes();
+      if (response.code === 0) {
+        supportedFileTypes.value = response.data.allowed_file_types || [];
+        loadingMethods.value = response.data.supported_types || {};
+        console.log('Loaded supported file types:', supportedFileTypes.value);
+        console.log('Loaded loading methods:', loadingMethods.value);
+      } else {
+        supportedTypesError.value = response.message;
+        console.error('Error loading supported file types:', response.message);
+      }
+    } catch (err: any) {
+      supportedTypesError.value = err.message || 'Failed to fetch supported file types';
+      console.error('Error fetching supported file types:', err);
+    } finally {
+      loadingSupportedTypes.value = false;
+    }
+  };
+
+  // Get loading methods for a specific file type
+  const getLoadingMethodsForFileType = async (fileType: string) => {
+    try {
+      const response = await fileService.getLoadingMethodsForFileType(fileType);
+      if (response.code === 0) {
+        return response.data.loading_methods || [];
+      } else {
+        console.error(`Error getting loading methods for ${fileType}:`, response.message);
+        return [];
+      }
+    } catch (err: any) {
+      console.error(`Error fetching loading methods for ${fileType}:`, err);
+      return [];
+    }
+  };
+
+  // Get file extension from filename
+  const getFileExtension = (filename: string): string => {
+    const lastDot = filename.lastIndexOf('.');
+    if (lastDot === -1) return '';
+    return filename.substring(lastDot + 1).toLowerCase();
+  };
+
+  // Check if file type is supported
+  const isFileTypeSupported = (filename: string): boolean => {
+    const extension = getFileExtension(filename);
+    return supportedFileTypes.value.includes(extension);
+  };
+
   // Return everything needed by the components
   return {
     // State
@@ -388,6 +450,12 @@ export const useRagDataStore = defineStore('ragData', () => {
     chunkSettings,
     vectorSettings,
     searchSettings,
+
+    // File type support state
+    supportedFileTypes,
+    loadingMethods,
+    loadingSupportedTypes,
+    supportedTypesError,
 
     // Computed
     fileCount,
@@ -404,6 +472,10 @@ export const useRagDataStore = defineStore('ragData', () => {
     createChunksForFile,
     getChunksForFile,
     performMockRagQuery,
-    initialize
+    initialize,
+    fetchSupportedFileTypes,
+    getLoadingMethodsForFileType,
+    isFileTypeSupported,
+    getFileExtension
   };
 });
